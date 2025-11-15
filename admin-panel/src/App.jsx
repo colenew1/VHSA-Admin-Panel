@@ -2,9 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
-import Students from './pages/Students';
-import Incomplete from './pages/Incomplete';
-import Reports from './pages/Reports';
+import Search from './pages/Search';
+import Import from './pages/Import';
+import Export from './pages/Export';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,9 +25,9 @@ function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/students" element={<Students />} />
-              <Route path="/incomplete" element={<Incomplete />} />
-              <Route path="/reports" element={<Reports />} />
+              <Route path="/search" element={<Search />} />
+              <Route path="/import" element={<Import />} />
+              <Route path="/export" element={<Export />} />
             </Routes>
           </main>
         </div>

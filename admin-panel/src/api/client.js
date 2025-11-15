@@ -22,11 +22,18 @@ export const getSchools = () =>
   api.get('/schools').then(res => res.data);
 
 // Exports
-export const exportStateReport = (params) => 
+export const exportStateReport = (params) =>
   api.get('/exports/state', { params, responseType: 'blob' }).then(res => res.data);
 
-export const exportStickers = (params) => 
+export const exportStickers = (params) =>
   api.get('/exports/stickers', { params, responseType: 'blob' }).then(res => res.data);
+
+// Screening Data
+export const getScreeningData = (params) =>
+  api.get('/screening/data', { params }).then(res => res.data);
+
+export const updateScreening = (uniqueId, data) =>
+  api.put(`/screening/${uniqueId}`, data).then(res => res.data);
 
 export default api;
 

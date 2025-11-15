@@ -14,6 +14,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import studentRoutes from './routes/students.js';
 import schoolRoutes from './routes/schools.js';
 import exportRoutes from './routes/exports.js';
+import screeningRoutes from './routes/screening.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -28,15 +29,22 @@ const allowedOrigins = [
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl)
-    if (!origin) return callback(null, true);
+    if (!origin) {
+      console.log('CORS: No origin, allowing');
+      return callback(null, true);
+    }
+
+    console.log('CORS: Checking origin:', origin);
 
     // Allow all localhost origins for local development
     if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      console.log('CORS: Localhost origin allowed');
       return callback(null, true);
     }
 
     // Check against allowed production origins
     if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('CORS: Production origin allowed');
       callback(null, true);
     } else {
       // Log the origin for debugging
@@ -52,6 +60,7 @@ app.use(express.json());
 
 // Root route - API information
 app.get('/', (req, res) => {
+  console.log('Root route hit');
   res.json({
     name: 'VHSA Screening API',
     version: '1.0.0',
@@ -64,6 +73,10 @@ app.get('/', (req, res) => {
       exports: {
         state: '/api/exports/state?school=SCHOOL_NAME&year=YEAR',
         stickers: '/api/exports/stickers?school=SCHOOL_NAME'
+      },
+      screening: {
+        data: '/api/screening/data?school=all&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&limit=50&offset=0',
+        update: '/api/screening/:student_id (PUT)'
       }
     }
   });
@@ -74,10 +87,22 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/schools', schoolRoutes);
 app.use('/api/exports', exportRoutes);
+app.use('/api/screening', screeningRoutes);
+
+console.log('✓ Routes registered: /, /health, /api/dashboard, /api/students, /api/schools, /api/exports, /api/screening');
 
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// 404 handler for unknown routes
+app.use((req, res, next) => {
+  res.status(404).json({
+    message: `Route ${req.method}:${req.path} not found`,
+    error: 'Not Found',
+    statusCode: 404
+  });
 });
 
 // Error handling
