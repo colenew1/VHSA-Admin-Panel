@@ -21,8 +21,6 @@ const PORT = process.env.PORT || 3001;
 
 // CORS Configuration
 const allowedOrigins = [
-  'http://localhost:5173',
-  'http://localhost:3000',
   'https://vhsa-admin-panel.netlify.app',
   process.env.FRONTEND_URL, // Additional frontend URL from environment
 ].filter(Boolean); // Remove undefined values
@@ -32,6 +30,12 @@ app.use(cors({
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
 
+    // Allow all localhost origins for local development
+    if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+      return callback(null, true);
+    }
+
+    // Check against allowed production origins
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
