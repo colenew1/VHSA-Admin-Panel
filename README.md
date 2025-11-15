@@ -132,6 +132,50 @@ npm run build
 npm run preview
 ```
 
+## Deployment
+
+### Backend Deployment
+
+The backend needs to be deployed to a hosting service that supports Node.js. Recommended options:
+
+- **Railway** (https://railway.app)
+- **Render** (https://render.com)
+- **Heroku** (https://heroku.com)
+- **Fly.io** (https://fly.io)
+
+**Steps:**
+1. Push your backend code to GitHub
+2. Connect your repository to your hosting service
+3. Set environment variables in your hosting service:
+   - `SUPABASE_URL` - Your Supabase project URL
+   - `SUPABASE_ANON_KEY` - Your Supabase anon key
+   - `PORT` - Usually auto-set by hosting service (default: 3001)
+   - `FRONTEND_URL` - Your frontend URL (e.g., `https://vhsa-admin-panel.netlify.app`)
+4. Deploy and note your backend URL (e.g., `https://your-backend.railway.app`)
+
+### Frontend Deployment (Netlify)
+
+1. Connect your GitHub repository to Netlify
+2. Set build settings:
+   - **Base directory**: `admin-panel`
+   - **Build command**: `npm run build`
+   - **Publish directory**: `admin-panel/dist`
+3. **Set environment variables in Netlify:**
+   - `VITE_API_URL` - Your deployed backend URL (e.g., `https://your-backend.railway.app`)
+4. Deploy
+
+**Important:** After deploying the backend, update the `VITE_API_URL` in Netlify to point to your production backend URL, not `localhost:3001`.
+
+### CORS Configuration
+
+The backend is configured to allow requests from:
+- `http://localhost:5173` (local development)
+- `http://localhost:3000` (alternative local port)
+- `https://vhsa-admin-panel.netlify.app` (production frontend)
+- Any URL set in `FRONTEND_URL` environment variable
+
+If you deploy to a different frontend URL, add it to the `allowedOrigins` array in `backend/server.js` or set it via the `FRONTEND_URL` environment variable.
+
 ## License
 
 MIT
