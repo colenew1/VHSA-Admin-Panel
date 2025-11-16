@@ -3,8 +3,9 @@ import { useState } from 'react';
 export default function AdvancedFilters({ filters, onChange, onClear }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const grades = ['K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
-  const genders = ['M', 'F', 'Other'];
+  const grades = ['Pre-K (3)', 'Pre-K (4)', 'Kindergarten', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
+  const gradeLabels = { 'Pre-K (3)': 'Pre-K (3)', 'Pre-K (4)': 'Pre-K (4)' };
+  const genders = ['Male', 'Female', 'Other'];
 
   const handleGradeToggle = (grade) => {
     const currentGrades = filters.grade ? filters.grade.split(',') : [];
@@ -93,7 +94,7 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
                           : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                       }`}
                     >
-                      {grade}
+                      {gradeLabels[grade] || grade}
                     </button>
                   );
                 })}

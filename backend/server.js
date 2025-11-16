@@ -13,6 +13,7 @@ import cors from 'cors';
 import dashboardRoutes from './routes/dashboard.js';
 import studentRoutes from './routes/students.js';
 import schoolRoutes from './routes/schools.js';
+import screenerRoutes from './routes/screeners.js';
 import exportRoutes from './routes/exports.js';
 import screeningRoutes from './routes/screening.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -86,10 +87,11 @@ app.get('/', (req, res) => {
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/schools', schoolRoutes);
+app.use('/api/screeners', screenerRoutes);
 app.use('/api/exports', exportRoutes);
 app.use('/api/screening', screeningRoutes);
 
-console.log('✓ Routes registered: /, /health, /api/dashboard, /api/students, /api/schools, /api/exports, /api/screening');
+console.log('✓ Routes registered: /, /health, /api/dashboard, /api/students, /api/schools, /api/screeners, /api/exports, /api/screening');
 
 // Health check
 app.get('/health', (req, res) => {

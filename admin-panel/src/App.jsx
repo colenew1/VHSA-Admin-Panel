@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Search from './pages/Search';
 import Import from './pages/Import';
 import Export from './pages/Export';
+import Advanced from './pages/Advanced';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,9 +26,10 @@ function App() {
             <Routes>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/search" element={<Search />} />
+              <Route path="/students" element={<Search />} />
               <Route path="/import" element={<Import />} />
               <Route path="/export" element={<Export />} />
+              <Route path="/advanced" element={<Advanced />} />
             </Routes>
           </main>
         </div>

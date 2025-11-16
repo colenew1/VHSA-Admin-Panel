@@ -3,9 +3,29 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getScreeningData, updateScreening, getSchools } from '../api/client';
 import { getRowStatus, getRowColor, hasFailedTest, formatDate, formatDOB, formatTestResult } from '../utils/statusHelpers';
 import EditableCell from '../components/EditableCell';
-import RowSaveButton from '../components/RowSaveButton';
 import AdvancedFilters from '../components/AdvancedFilters';
 import ColorLegend from '../components/ColorLegend';
+
+// Test result options for dropdowns (Pass/Fail)
+const TEST_RESULT_OPTIONS = [
+  { value: '', label: '' },
+  { value: 'P', label: 'Pass' },
+  { value: 'F', label: 'Fail' },
+];
+
+// Vision acuity score options (20/20 to 20/100, increasing by tens)
+const VISION_ACUITY_OPTIONS = [
+  { value: '', label: '' },
+  { value: '20/20', label: '20/20' },
+  { value: '20/30', label: '20/30' },
+  { value: '20/40', label: '20/40' },
+  { value: '20/50', label: '20/50' },
+  { value: '20/60', label: '20/60' },
+  { value: '20/70', label: '20/70' },
+  { value: '20/80', label: '20/80' },
+  { value: '20/90', label: '20/90' },
+  { value: '20/100', label: '20/100' },
+];
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
@@ -34,11 +54,16 @@ export default function Dashboard() {
   // Advanced filters visibility
   const [showAdvancedFilters, setShowAdvancedFilters] = useState(true);
   
-  // Edit mode state
-  const [editMode, setEditMode] = useState(false);
+  // Per-row edit mode state (track which row is being edited by unique_id)
+  const [editingRowId, setEditingRowId] = useState(null);
   
   // Track if search has been triggered
   const [hasSearched, setHasSearched] = useState(false);
+  
+  // Confirmation dialog state
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [confirmAction, setConfirmAction] = useState(null);
+  const [confirmMessage, setConfirmMessage] = useState('');
 
   // Fetch schools
   const { data: schoolsData } = useQuery({
@@ -180,6 +205,8 @@ export default function Dashboard() {
         delete newState[uniqueId];
         return newState;
       });
+      // Exit edit mode after successful save
+      setEditingRowId(null);
     } catch (error) {
       console.error('Save error:', error);
       alert('Failed to save changes. Please try again.');
@@ -189,6 +216,42 @@ export default function Dashboard() {
         delete newState[uniqueId];
         return newState;
       });
+    }
+  };
+
+  // Handle Edit button click
+  const handleEditClick = (uniqueId) => {
+    setEditingRowId(uniqueId);
+  };
+
+  // Handle Cancel button click
+  const handleCancelClick = (uniqueId) => {
+    // Discard unsaved changes for this row
+    setUnsavedChanges(prev => {
+      const newState = { ...prev };
+      delete newState[uniqueId];
+      return newState;
+    });
+    // Exit edit mode
+    setEditingRowId(null);
+  };
+
+  // Handle Accept button click (same as save)
+  const handleAcceptClick = (uniqueId) => {
+    const changes = unsavedChanges[uniqueId];
+    if (!changes || Object.keys(changes).length === 0) return;
+    
+    setShowConfirmDialog(true);
+    setConfirmMessage('Are you sure you want to save these changes?');
+    setConfirmAction(() => async () => {
+      await handleRowSave(uniqueId);
+      setShowConfirmDialog(false);
+    });
+  };
+
+  const confirmActionHandler = () => {
+    if (confirmAction) {
+      confirmAction();
     }
   };
 
@@ -253,7 +316,7 @@ export default function Dashboard() {
       <ColorLegend />
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           {/* School Filter */}
           <div>
@@ -333,7 +396,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Search Button and Edit Mode */}
+          {/* Search Button */}
           <div className="flex items-end gap-2">
             <button
               onClick={handleSearch}
@@ -344,17 +407,6 @@ export default function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               Search
-            </button>
-            <button
-              onClick={() => setEditMode(!editMode)}
-              className={`px-4 py-2 text-sm font-medium rounded-md transition-colors flex items-center justify-center ${
-                editMode
-                  ? 'bg-red-600 text-white hover:bg-red-700'
-                  : 'bg-red-500 text-white hover:bg-red-600'
-              }`}
-              style={{ height: '38px' }}
-            >
-              {editMode ? 'Exit Edit Mode' : 'Edit Mode'}
             </button>
           </div>
         </div>
@@ -375,7 +427,7 @@ export default function Dashboard() {
 
       {/* Pagination Controls */}
       {hasSearched && (
-      <div className="flex items-center justify-between bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+      <div className="flex items-center justify-between bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4">
         <div className="flex items-center gap-4">
           <label className="text-sm text-gray-700">Show:</label>
           <select
@@ -428,142 +480,142 @@ export default function Dashboard() {
           <p className="text-sm text-gray-500">Set your search parameters above and click "Search" to view screening data.</p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-          <div className="overflow-x-auto overflow-y-auto max-h-[calc(100vh-400px)]">
-            <table className="w-full border-collapse">
-            <thead className="bg-gray-50 sticky top-0 z-10">
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+          <div className="overflow-x-auto" style={{ position: 'relative' }}>
+            <table className="w-full" style={{ borderCollapse: 'collapse', borderSpacing: 0 }}>
+            <thead className="bg-gray-50" style={{ position: 'sticky', top: 0, zIndex: 100, backgroundColor: '#f9fafb' }}>
               {/* Main Header Row */}
-              <tr>
-                <th rowSpan={2} className="bg-gray-50 border-b-2 border-r-2 border-gray-300 px-3 py-3 text-sm font-bold text-gray-900 text-center min-w-[50px]">
+              <tr className="bg-gray-50" style={{ backgroundColor: '#f9fafb', margin: 0, padding: 0, borderSpacing: 0 }}>
+                <th rowSpan={2} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-3 text-sm font-bold text-gray-900 text-center" style={{ minWidth: '50px', backgroundColor: '#f9fafb', margin: 0, padding: '12px', borderBottom: 'none', borderTop: 'none' }}>
                   #
                 </th>
-                <th colSpan={9} className="border-b-2 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900 bg-blue-50">
+                <th colSpan={9} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
                   Student Information
                 </th>
-                <th colSpan={2} className="border-b-2 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900 bg-indigo-50">
+                <th colSpan={2} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
                   Screening Details
                 </th>
-                <th colSpan={4} className="border-b-2 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900 bg-blue-100">
+                <th colSpan={4} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
                   Vision Acuity
                 </th>
-                <th colSpan={12} className="border-b-2 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900 bg-green-100">
+                <th colSpan={12} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
                   Hearing
                 </th>
-                <th colSpan={2} className="border-b-2 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900 bg-yellow-100">
+                <th colSpan={2} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
                   AN
                 </th>
-                <th colSpan={2} className="border-b-2 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900 bg-purple-100">
+                <th colSpan={2} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
                   Spinal
                 </th>
-                <th rowSpan={2} className="border-b-2 border-r-2 border-gray-300 px-3 py-3 text-sm font-bold text-gray-900 text-center min-w-[80px]">
+                <th rowSpan={2} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-3 text-sm font-bold text-gray-900 text-center" style={{ minWidth: '80px', backgroundColor: '#f9fafb', margin: 0, padding: '12px', borderBottom: 'none', borderTop: 'none' }}>
                   Absent
                 </th>
-                <th rowSpan={2} className="border-b-2 border-gray-300 px-3 py-3 text-sm font-bold text-gray-900 text-center min-w-[100px]">
+                <th rowSpan={2} className="bg-gray-50 px-3 py-3 text-sm font-bold text-gray-900 text-center" style={{ minWidth: '100px', backgroundColor: '#f9fafb', margin: 0, padding: '12px', borderBottom: 'none', borderTop: 'none' }}>
                   Actions
                 </th>
               </tr>
               {/* Sub-header Row */}
-              <tr>
+              <tr className="bg-gray-50" style={{ backgroundColor: '#f9fafb', margin: 0, padding: 0, borderSpacing: 0 }}>
                 {/* Student Info Columns */}
-                <th className="border-b border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   Grade
                 </th>
-                <th className="border-b border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[90px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '90px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   Returning?
                 </th>
-                <th className="border-b border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[120px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '120px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   First Name
                 </th>
-                <th className="sticky left-0 bg-gray-50 border-b border-r-2 border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[120px] z-20">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '120px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   Last Name
                 </th>
-                <th className="border-b border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[100px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '100px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   Student ID
                 </th>
-                <th className="border-b border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   Gender
                 </th>
-                <th className="border-b border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[110px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '110px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   DOB
                 </th>
-                <th className="border-b border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[100px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '100px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   School
                 </th>
-                <th className="border-b border-r-2 border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[100px]">
+                <th className="bg-gray-50 border-b-2 border-r-2 border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '100px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   Teacher
                 </th>
                 {/* Screening Details */}
-                <th className="border-b border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[130px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '130px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   Glasses/Contacts
                 </th>
-                <th className="border-b border-r-2 border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 text-left min-w-[130px]">
+                <th className="bg-gray-50 border-b-2 border-r-2 border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '130px', backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderTop: '1px solid #e5e7eb' }}>
                   Screening Date
                 </th>
                 {/* Vision Sub-headers */}
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init R
                 </th>
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init L
                 </th>
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen R
                 </th>
-                <th className="border-b border-r-2 border-gray-300 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r-2 border-gray-300 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen L
                 </th>
                 {/* Hearing Sub-headers - Initial Right (1k, 2k, 4k) */}
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init R 1k
                 </th>
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init R 2k
                 </th>
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init R 4k
                 </th>
                 {/* Hearing Sub-headers - Initial Left (1k, 2k, 4k) */}
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init L 1k
                 </th>
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init L 2k
                 </th>
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init L 4k
                 </th>
                 {/* Hearing Sub-headers - Rescreen Right (1k, 2k, 4k) */}
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen R 1k
                 </th>
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen R 2k
                 </th>
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen R 4k
                 </th>
                 {/* Hearing Sub-headers - Rescreen Left (1k, 2k, 4k) */}
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen L 1k
                 </th>
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen L 2k
                 </th>
-                <th className="border-b border-r-2 border-gray-300 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[60px]">
+                <th className="bg-gray-50 border-b-2 border-r-2 border-gray-300 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '60px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen L 4k
                 </th>
                 {/* AN Sub-headers */}
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init
                 </th>
-                <th className="border-b border-r-2 border-gray-300 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r-2 border-gray-300 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen
                 </th>
                 {/* Spinal Sub-headers */}
-                <th className="border-b border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Init
                 </th>
-                <th className="border-b border-r-2 border-gray-300 px-2 py-2 text-xs font-medium text-gray-600 text-center min-w-[70px]">
+                <th className="bg-gray-50 border-b-2 border-r-2 border-gray-300 px-2 py-2 text-xs font-medium text-gray-600 text-center" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '8px', borderTop: '1px solid #e5e7eb' }}>
                   Rescreen
                 </th>
               </tr>
@@ -576,6 +628,7 @@ export default function Dashboard() {
                 const hasUnsavedChanges = unsavedChanges[uniqueId] && Object.keys(unsavedChanges[uniqueId]).length > 0;
                 const isSaving = savingRows[uniqueId];
                 const failed = hasFailedTest(student);
+                const isEditing = editingRowId === uniqueId;
 
                 // Merge original data with unsaved changes
                 const displayData = {
@@ -591,47 +644,65 @@ export default function Dashboard() {
                     </td>
                     
                     {/* Grade */}
-                    <td className="bg-inherit border-r border-gray-200 px-3 py-3">
+                    <td className={`${rowColor} border-r border-gray-200 px-3 py-3`}>
                       <EditableCell
-                        value={displayData.grade}
-                        onChange={(value) => editMode ? handleCellChange(uniqueId, 'grade', value) : undefined}
-                        type="text"
+                        value={displayData.grade || ''}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'grade', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? [
+                          { value: '', label: '' },
+                          { value: 'Pre-K (3)', label: 'Pre-K (3)' },
+                          { value: 'Pre-K (4)', label: 'Pre-K (4)' },
+                          { value: 'Kindergarten', label: 'Kindergarten' },
+                          { value: '1st', label: '1st' },
+                          { value: '2nd', label: '2nd' },
+                          { value: '3rd', label: '3rd' },
+                          { value: '4th', label: '4th' },
+                          { value: '5th', label: '5th' },
+                          { value: '6th', label: '6th' },
+                          { value: '7th', label: '7th' },
+                          { value: '8th', label: '8th' },
+                          { value: '9th', label: '9th' },
+                          { value: '10th', label: '10th' },
+                          { value: '11th', label: '11th' },
+                          { value: '12th', label: '12th' },
+                        ] : []}
                         className="text-sm font-medium"
-                        disabled={!editMode}
+                        disabled={!isEditing}
                       />
                     </td>
                     
                     {/* Returning? */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`${rowColor} border-r border-gray-200 px-3 py-3`}>
                       <EditableCell
                         value={displayData.status === 'returning' ? 'Yes' : 'No'}
-                        onChange={(value) => editMode ? handleCellChange(uniqueId, 'status', value === 'Yes' ? 'returning' : 'new') : undefined}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'status', value === 'Yes' ? 'returning' : 'new') : undefined}
                         type="select"
                         options={[{ value: 'Yes', label: 'Yes' }, { value: 'No', label: 'No' }]}
                         className="text-sm"
-                        disabled={!editMode}
+                        disabled={!isEditing}
                       />
                     </td>
                     
                     {/* First Name */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`${rowColor} border-r border-gray-200 px-3 py-3`}>
                       <EditableCell
                         value={displayData.first_name}
-                        onChange={(value) => editMode ? handleCellChange(uniqueId, 'first_name', value) : undefined}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'first_name', value) : undefined}
                         type="text"
                         className="text-sm"
-                        disabled={!editMode}
+                        disabled={!isEditing}
                       />
                     </td>
                     
-                    {/* Last Name - Sticky */}
-                    <td className="sticky left-0 bg-inherit border-r-2 border-gray-300 px-3 py-3 z-20">
+                    {/* Last Name */}
+                    <td className={`${rowColor} border-r-2 border-gray-300 px-3 py-3`}>
                       <EditableCell
                         value={displayData.last_name}
-                        onChange={(value) => editMode ? handleCellChange(uniqueId, 'last_name', value) : undefined}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'last_name', value) : undefined}
                         type="text"
                         className="text-sm"
-                        disabled={!editMode}
+                        disabled={!isEditing}
                       />
                     </td>
                     
@@ -639,10 +710,10 @@ export default function Dashboard() {
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={displayData.unique_id || ''}
-                        onChange={(value) => editMode ? handleCellChange(uniqueId, 'unique_id', value) : undefined}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'unique_id', value) : undefined}
                         type="text"
                         className="text-sm font-medium"
-                        disabled={!editMode}
+                        disabled={!isEditing}
                       />
                     </td>
                     
@@ -650,17 +721,17 @@ export default function Dashboard() {
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={displayData.gender}
-                        onChange={(value) => editMode ? handleCellChange(uniqueId, 'gender', value) : undefined}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'gender', value) : undefined}
                         type="select"
                         options={[{ value: 'M', label: 'M' }, { value: 'F', label: 'F' }, { value: 'Other', label: 'Other' }]}
                         className="text-sm"
-                        disabled={!editMode}
+                        disabled={!isEditing}
                       />
                     </td>
                     
                     {/* DOB */}
                     <td className="border-r border-gray-200 px-3 py-3">
-                      {editMode ? (
+                      {isEditing ? (
                         <EditableCell
                           value={displayData.dob ? new Date(displayData.dob).toISOString().split('T')[0] : ''}
                           onChange={(value) => handleCellChange(uniqueId, 'dob', value)}
@@ -682,11 +753,11 @@ export default function Dashboard() {
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={displayData.school || ''}
-                        onChange={(value) => editMode ? handleCellChange(uniqueId, 'school', value) : undefined}
-                        type={editMode ? 'select' : 'text'}
-                        options={editMode ? schools.map(s => ({ value: s.name, label: s.name })) : []}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'school', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? schools.map(s => ({ value: s.name, label: s.name })) : []}
                         className="text-sm"
-                        disabled={!editMode}
+                        disabled={!isEditing}
                       />
                     </td>
                     
@@ -694,64 +765,88 @@ export default function Dashboard() {
                     <td className="border-r-2 border-gray-300 px-3 py-3">
                       <EditableCell
                         value={displayData.teacher || ''}
-                        onChange={(value) => editMode ? handleCellChange(uniqueId, 'teacher', value) : undefined}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'teacher', value) : undefined}
                         type="text"
                         className="text-sm"
-                        disabled={!editMode}
+                        disabled={!isEditing}
                       />
                     </td>
                     
                     {/* Glasses/Contacts */}
                     <td className="border-r border-gray-200 px-3 py-3">
-                      <EditableCell
-                        value={displayData.glasses_or_contacts || ''}
-                        onChange={(value) => handleCellChange(uniqueId, 'glasses_or_contacts', value)}
-                        type="text"
-                        className="text-sm"
-                      />
+                      {isEditing ? (
+                        <EditableCell
+                          value={displayData.glasses_or_contacts === 'Yes' || displayData.glasses_or_contacts === true ? 'Yes' : displayData.glasses_or_contacts === 'No' || displayData.glasses_or_contacts === false ? 'No' : (displayData.glasses_or_contacts || '')}
+                          onChange={(value) => handleCellChange(uniqueId, 'glasses_or_contacts', value)}
+                          type="select"
+                          options={[
+                            { value: '', label: '' },
+                            { value: 'Yes', label: 'Yes' },
+                            { value: 'No', label: 'No' },
+                          ]}
+                          className="text-sm"
+                        />
+                      ) : (
+                        <EditableCell
+                          value={displayData.glasses_or_contacts || ''}
+                          onChange={() => {}}
+                          type="text"
+                          className="text-sm"
+                          disabled={true}
+                        />
+                      )}
                     </td>
                     
                     {/* Date of Screening */}
                     <td className="border-r-2 border-gray-300 px-3 py-3">
                       <EditableCell
                         value={displayData.initial_screening_date ? new Date(displayData.initial_screening_date).toISOString().split('T')[0] : ''}
-                        onChange={(value) => handleCellChange(uniqueId, 'initial_screening_date', value)}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'initial_screening_date', value) : undefined}
                         type="date"
                         className="text-sm"
+                        disabled={!isEditing}
                       />
                     </td>
                     
                     {/* Vision Results */}
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
-                        value={formatTestResult(displayData.vision_initial_right)}
-                        onChange={(value) => handleCellChange(uniqueId, 'vision_initial_right', value)}
-                        type="text"
+                        value={displayData.vision_initial_right || ''}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'vision_initial_right', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? VISION_ACUITY_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
-                        value={formatTestResult(displayData.vision_initial_left)}
-                        onChange={(value) => handleCellChange(uniqueId, 'vision_initial_left', value)}
-                        type="text"
+                        value={displayData.vision_initial_left || ''}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'vision_initial_left', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? VISION_ACUITY_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
-                        value={formatTestResult(displayData.vision_rescreen_right)}
-                        onChange={(value) => handleCellChange(uniqueId, 'vision_rescreen_right', value)}
-                        type="text"
+                        value={displayData.vision_rescreen_right || ''}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'vision_rescreen_right', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? VISION_ACUITY_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r-2 border-gray-300 px-3 py-3">
                       <EditableCell
-                        value={formatTestResult(displayData.vision_rescreen_left)}
-                        onChange={(value) => handleCellChange(uniqueId, 'vision_rescreen_left', value)}
-                        type="text"
+                        value={displayData.vision_rescreen_left || ''}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'vision_rescreen_left', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? VISION_ACUITY_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     
@@ -759,100 +854,124 @@ export default function Dashboard() {
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_right_1000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_initial_right_1000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_right_1000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_right_2000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_initial_right_2000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_right_2000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_right_4000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_initial_right_4000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_right_4000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     {/* Hearing Results - Initial Left (1k, 2k, 4k) */}
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_left_1000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_initial_left_1000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_left_1000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_left_2000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_initial_left_2000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_left_2000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_left_4000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_initial_left_4000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_left_4000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     {/* Hearing Results - Rescreen Right (1k, 2k, 4k) */}
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_right_1000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_rescreen_right_1000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_right_1000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_right_2000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_rescreen_right_2000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_right_2000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_right_4000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_rescreen_right_4000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_right_4000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     {/* Hearing Results - Rescreen Left (1k, 2k, 4k) */}
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_left_1000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_rescreen_left_1000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_left_1000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_left_2000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_rescreen_left_2000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_left_2000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r-2 border-gray-300 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_left_4000)}
-                        onChange={(value) => handleCellChange(uniqueId, 'hearing_rescreen_left_4000', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_left_4000', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     
@@ -860,17 +979,21 @@ export default function Dashboard() {
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.acanthosis_initial)}
-                        onChange={(value) => handleCellChange(uniqueId, 'acanthosis_initial', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'acanthosis_initial', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r-2 border-gray-300 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.acanthosis_rescreen)}
-                        onChange={(value) => handleCellChange(uniqueId, 'acanthosis_rescreen', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'acanthosis_rescreen', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     
@@ -878,23 +1001,27 @@ export default function Dashboard() {
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.scoliosis_initial)}
-                        onChange={(value) => handleCellChange(uniqueId, 'scoliosis_initial', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'scoliosis_initial', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     <td className="border-r-2 border-gray-300 px-3 py-3">
                       <EditableCell
                         value={formatTestResult(displayData.scoliosis_rescreen)}
-                        onChange={(value) => handleCellChange(uniqueId, 'scoliosis_rescreen', value)}
-                        type="text"
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'scoliosis_rescreen', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
                         className="text-sm text-center font-medium"
+                        disabled={!isEditing}
                       />
                     </td>
                     
                     {/* Absent */}
                     <td className="border-r-2 border-gray-300 px-3 py-3 text-center">
-                      {editMode ? (
+                      {isEditing ? (
                         <EditableCell
                           value={displayData.was_absent ? 'Yes' : 'No'}
                           onChange={(value) => handleCellChange(uniqueId, 'was_absent', value === 'Yes')}
@@ -908,24 +1035,72 @@ export default function Dashboard() {
                           onChange={(value) => handleCellChange(uniqueId, 'was_absent', value)}
                           type="checkbox"
                           className="text-sm"
+                          disabled={true}
                         />
                       )}
                     </td>
                     
-                    {/* Save Button */}
+                    {/* Actions - Edit/Accept/Cancel */}
                     <td className="px-3 py-3 text-center">
-                      {hasUnsavedChanges && (
-                        <RowSaveButton
-                          onSave={() => handleRowSave(uniqueId)}
-                          isSaving={isSaving}
-                        />
+                      {isEditing ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleAcceptClick(uniqueId)}
+                            disabled={isSaving}
+                            className="px-3 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {isSaving ? 'Saving...' : 'Accept'}
+                          </button>
+                          <button
+                            onClick={() => handleCancelClick(uniqueId)}
+                            disabled={isSaving}
+                            className="px-3 py-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => handleEditClick(uniqueId)}
+                          className="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+                        >
+                          Edit
+                        </button>
                       )}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Dialog */}
+      {showConfirmDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Action</h3>
+            <p className="text-gray-700 mb-6">{confirmMessage}</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => {
+                  setShowConfirmDialog(false);
+                  setConfirmAction(null);
+                  setConfirmMessage('');
+                }}
+                className="px-4 py-2 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmActionHandler}
+                className="px-4 py-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600"
+              >
+                Confirm
+              </button>
+            </div>
           </div>
         </div>
       )}

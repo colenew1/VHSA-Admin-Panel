@@ -3,49 +3,46 @@ import { supabase } from '../config/database.js';
 
 const router = express.Router();
 
-// Get all schools (with optional active filter)
-// If active parameter is not provided, defaults to active=true for backward compatibility
+// Get all screeners (with optional active filter)
+// If active parameter is not provided, returns all screeners
 router.get('/', async (req, res, next) => {
   try {
     const { active } = req.query;
     
     let query = supabase
-      .from('schools')
+      .from('screeners')
       .select('*')
       .order('name');
     
     // If active filter is specified, apply it
-    // If not specified, default to active=true for backward compatibility
     if (active !== undefined) {
       query = query.eq('active', active === 'true');
-    } else {
-      // Default to active schools for backward compatibility
-      query = query.eq('active', true);
     }
+    // If not specified, return all (both active and inactive)
     
     const { data, error } = await query;
     
     if (error) throw error;
     
-    res.json({ schools: data });
+    res.json({ screeners: data });
     
   } catch (error) {
     next(error);
   }
 });
 
-// Create new school
+// Create new screener
 router.post('/', async (req, res, next) => {
   try {
     const { name, active = true } = req.body;
     
     if (!name) {
-      return res.status(400).json({ error: 'School name is required' });
+      return res.status(400).json({ error: 'Screener name is required' });
     }
     
-    // Check if school already exists (case-insensitive)
+    // Check if screener already exists (case-insensitive)
     const { data: existing, error: checkError } = await supabase
-      .from('schools')
+      .from('screeners')
       .select('*')
       .ilike('name', name.trim())
       .maybeSingle();
@@ -55,12 +52,12 @@ router.post('/', async (req, res, next) => {
     }
     
     if (existing) {
-      return res.status(400).json({ error: 'School already exists' });
+      return res.status(400).json({ error: 'Screener already exists' });
     }
     
-    // Insert new school
-    const { data: school, error: insertError } = await supabase
-      .from('schools')
+    // Insert new screener
+    const { data: screener, error: insertError } = await supabase
+      .from('screeners')
       .insert({ name: name.trim(), active })
       .select()
       .single();
@@ -68,8 +65,8 @@ router.post('/', async (req, res, next) => {
     if (insertError) throw insertError;
     
     res.status(201).json({
-      school: school,
-      message: 'School created successfully'
+      screener: screener,
+      message: 'Screener created successfully'
     });
     
   } catch (error) {
@@ -77,31 +74,31 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// Update school
+// Update screener
 router.put('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     const { name, active } = req.body;
     
     if (!name) {
-      return res.status(400).json({ error: 'School name is required' });
+      return res.status(400).json({ error: 'Screener name is required' });
     }
     
-    // Check if school exists
+    // Check if screener exists
     const { data: existing, error: checkError } = await supabase
-      .from('schools')
+      .from('screeners')
       .select('*')
       .eq('id', id)
       .single();
     
     if (checkError) throw checkError;
     if (!existing) {
-      return res.status(404).json({ error: 'School not found' });
+      return res.status(404).json({ error: 'Screener not found' });
     }
     
-    // Check if name conflicts with another school (case-insensitive, excluding current)
+    // Check if name conflicts with another screener (case-insensitive, excluding current)
     const { data: nameConflict, error: nameError } = await supabase
-      .from('schools')
+      .from('screeners')
       .select('*')
       .ilike('name', name.trim())
       .neq('id', id)
@@ -112,12 +109,12 @@ router.put('/:id', async (req, res, next) => {
     }
     
     if (nameConflict) {
-      return res.status(400).json({ error: 'School name already exists' });
+      return res.status(400).json({ error: 'Screener name already exists' });
     }
     
-    // Update school
-    const { data: school, error: updateError } = await supabase
-      .from('schools')
+    // Update screener
+    const { data: screener, error: updateError } = await supabase
+      .from('screeners')
       .update({ 
         name: name.trim(), 
         active: active !== undefined ? active : existing.active,
@@ -130,8 +127,8 @@ router.put('/:id', async (req, res, next) => {
     if (updateError) throw updateError;
     
     res.json({
-      school: school,
-      message: 'School updated successfully'
+      screener: screener,
+      message: 'Screener updated successfully'
     });
     
   } catch (error) {
@@ -139,33 +136,33 @@ router.put('/:id', async (req, res, next) => {
   }
 });
 
-// Delete school
+// Delete screener
 router.delete('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
     
-    // Check if school exists
+    // Check if screener exists
     const { data: existing, error: checkError } = await supabase
-      .from('schools')
+      .from('screeners')
       .select('*')
       .eq('id', id)
       .single();
     
     if (checkError) throw checkError;
     if (!existing) {
-      return res.status(404).json({ error: 'School not found' });
+      return res.status(404).json({ error: 'Screener not found' });
     }
     
-    // Delete school
+    // Delete screener
     const { error: deleteError } = await supabase
-      .from('schools')
+      .from('screeners')
       .delete()
       .eq('id', id);
     
     if (deleteError) throw deleteError;
     
     res.json({
-      message: 'School deleted successfully'
+      message: 'Screener deleted successfully'
     });
     
   } catch (error) {

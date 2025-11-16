@@ -7,9 +7,10 @@ export default function Navbar() {
   
   const tabs = [
     { path: '/dashboard', label: 'Dashboard' },
-    { path: '/search', label: 'Search' },
+    { path: '/students', label: 'Students' },
     { path: '/import', label: 'Import' },
     { path: '/export', label: 'Export' },
+    { path: '/advanced', label: 'Advanced' },
   ];
   
   return (
