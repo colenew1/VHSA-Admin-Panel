@@ -62,6 +62,8 @@ export default function Search() {
   const [confirmMessage, setConfirmMessage] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [showSuccessDialog, setShowSuccessDialog] = useState(false);
+  const [createdStudentId, setCreatedStudentId] = useState(null);
 
   // Add Student form state
   const [newStudent, setNewStudent] = useState({
@@ -226,8 +228,11 @@ export default function Search() {
     setConfirmMessage('Are you sure you want to add this student?');
     setConfirmAction(() => async () => {
       try {
-        await createStudentMutation.mutateAsync(newStudent);
-        alert('Student added successfully!');
+        const response = await createStudentMutation.mutateAsync(newStudent);
+        // Get the generated student ID from the response
+        const studentId = response?.student?.unique_id || newStudent.unique_id || 'N/A';
+        setCreatedStudentId(studentId);
+        setShowSuccessDialog(true);
         // Reset form
         setNewStudent({
           first_name: '',
@@ -240,8 +245,6 @@ export default function Search() {
           status: 'New',
           unique_id: '',
         });
-        // Switch to search tab
-        setActiveTab('search');
       } catch (error) {
         console.error('Create error:', error);
         alert('Failed to add student. Please try again.');
@@ -1111,8 +1114,8 @@ export default function Search() {
                     onChange={(e) => setNewStudent({ ...newStudent, status: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                   >
-                    <option value="new">New</option>
-                    <option value="returning">Returning</option>
+                    <option value="New">New</option>
+                    <option value="Returning">Returning</option>
                   </select>
                 </div>
               </div>
@@ -1142,8 +1145,8 @@ export default function Search() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
                   >
                     <option value="">Select Gender</option>
-                    <option value="M">M</option>
-                    <option value="F">F</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
                     <option value="Other">Other</option>
                   </select>
                 </div>
@@ -1210,6 +1213,45 @@ export default function Search() {
                 className="px-4 py-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600"
               >
                 Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Dialog */}
+      {showSuccessDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center justify-center mb-4">
+              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
+                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 text-center mb-2">
+              Student Created Successfully!
+            </h3>
+            <div className="text-center mb-4">
+              <p className="text-gray-700 mb-2">
+                Student ID: <span className="font-semibold text-gray-900">{createdStudentId}</span>
+              </p>
+              <p className="text-sm text-gray-600 mt-4">
+                To begin screening, please search for this student using the search form.
+              </p>
+            </div>
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  setShowSuccessDialog(false);
+                  setCreatedStudentId(null);
+                  // Switch to search tab
+                  setActiveTab('search');
+                }}
+                className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-medium"
+              >
+                OK
               </button>
             </div>
           </div>

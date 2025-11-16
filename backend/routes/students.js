@@ -291,6 +291,51 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
     
+    // Auto-generate unique_id if not provided
+    let finalUniqueId = unique_id;
+    if (!finalUniqueId) {
+      // Generate school abbreviation (same logic as getNextStudentId)
+      const generateAbbreviation = (name) => {
+        const cleaned = name
+          .replace(/^(St\.|Saint|St)\s+/i, '')
+          .replace(/\s+(Elementary|Middle|High|School|Academy|Acad)$/i, '')
+          .trim();
+        const words = cleaned.split(/\s+/);
+        if (words.length >= 2) {
+          return (words[0][0] + words[1][0]).toUpperCase();
+        } else if (words.length === 1) {
+          return words[0].substring(0, 2).toUpperCase();
+        }
+        return 'XX';
+      };
+      
+      const abbreviation = generateAbbreviation(school);
+      const pattern = `${abbreviation}%`;
+      
+      // Get all existing student IDs for this school that match the pattern
+      const { data: existingStudents, error: existingError } = await supabase
+        .from('students')
+        .select('unique_id')
+        .ilike('unique_id', pattern)
+        .not('unique_id', 'is', null);
+      
+      if (existingError) throw existingError;
+      
+      // Extract numbers from existing IDs
+      const numbers = existingStudents
+        .map(s => {
+          const match = s.unique_id?.match(/\d+$/);
+          return match ? parseInt(match[0]) : 0;
+        })
+        .filter(n => n > 0);
+      
+      // Find next available number
+      const nextNumber = numbers.length > 0 ? Math.max(...numbers) + 1 : 1;
+      
+      // Format as ABBREV0001, ABBREV0002, etc. (4 digits)
+      finalUniqueId = `${abbreviation}${String(nextNumber).padStart(4, '0')}`;
+    }
+    
     // Insert student
     const { data: student, error: studentError } = await supabase
       .from('students')
@@ -303,7 +348,7 @@ router.post('/', async (req, res, next) => {
         school,
         teacher: teacher || null,
         status,
-        unique_id: unique_id || null
+        unique_id: finalUniqueId
       })
       .select()
       .single();

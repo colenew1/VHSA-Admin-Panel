@@ -45,10 +45,8 @@ export default function Import() {
   const fileInputRef = useRef(null);
   const [isDragging, setIsDragging] = useState(false);
   
-  // School validation dialog state
-  const [showSchoolDialog, setShowSchoolDialog] = useState(false);
-  const [missingSchool, setMissingSchool] = useState('');
-  const [schoolDialogResolve, setSchoolDialogResolve] = useState(null);
+  // Track missing schools for warning
+  const [missingSchools, setMissingSchools] = useState([]);
 
   // Fetch schools for dropdown
   const { data: schoolsData } = useQuery({
@@ -177,40 +175,11 @@ export default function Import() {
     return missingSchools;
   };
 
-  // Show dialog for missing school and wait for user decision
-  const promptForMissingSchool = (schoolName) => {
-    return new Promise((resolve) => {
-      setMissingSchool(schoolName);
-      setShowSchoolDialog(true);
-      setSchoolDialogResolve(() => resolve);
-    });
-  };
-
-  // Handle school dialog response
-  const handleSchoolDialogResponse = async (shouldAdd) => {
-    setShowSchoolDialog(false);
-    
-    if (shouldAdd) {
-      try {
-        await createSchoolMutation.mutateAsync({ name: missingSchool, active: true });
-        // Refresh schools list - the query will automatically refetch
-        await queryClient.invalidateQueries(['schools']);
-        if (schoolDialogResolve) {
-          schoolDialogResolve(true);
-        }
-      } catch (error) {
-        alert(`Failed to add school "${missingSchool}": ${error.response?.data?.error || error.message}`);
-        if (schoolDialogResolve) {
-          schoolDialogResolve(false);
-        }
-      }
-    } else {
-      if (schoolDialogResolve) {
-        schoolDialogResolve(false);
-      }
-    }
-    
-    setSchoolDialogResolve(null);
+  // Check for missing schools and update state
+  const checkMissingSchools = () => {
+    const missing = validateSchools(csvData, schools);
+    setMissingSchools(missing);
+    return missing.length > 0;
   };
 
   // Auto-assign student IDs based on school
@@ -280,41 +249,6 @@ export default function Import() {
     try {
       const text = await file.text();
       const parsed = parseCSV(text);
-      
-      // Get fresh schools list for validation
-      let currentSchools = schools;
-      if (schools.length === 0) {
-        const { data: schoolsData } = await queryClient.fetchQuery({
-          queryKey: ['schools'],
-          queryFn: getSchools,
-        });
-        currentSchools = schoolsData?.schools || [];
-      }
-      
-      // Validate schools - check if all schools exist in database
-      let missingSchools = validateSchools(parsed, currentSchools);
-      
-      // Process missing schools one at a time
-      while (missingSchools.length > 0) {
-        const schoolName = missingSchools[0];
-        const shouldAdd = await promptForMissingSchool(schoolName);
-        
-        if (!shouldAdd) {
-          alert(`Import cancelled. School "${schoolName}" must be added to the database first.`);
-          return; // Stop import
-        }
-        
-        // Refresh schools list after adding
-        await queryClient.invalidateQueries(['schools']);
-        const { data: updatedSchoolsData } = await queryClient.fetchQuery({
-          queryKey: ['schools'],
-          queryFn: getSchools,
-        });
-        currentSchools = updatedSchoolsData?.schools || [];
-        
-        // Re-validate to check if there are more missing schools
-        missingSchools = validateSchools(parsed, currentSchools);
-      }
       
       // Auto-assign student IDs
       const withIds = await assignStudentIds(parsed);
@@ -394,6 +328,27 @@ export default function Import() {
 
   // Handle import
   const handleImport = async () => {
+    // Check for missing schools before importing
+    let currentSchools = schools;
+    if (schools.length === 0) {
+      const { data: schoolsData } = await queryClient.fetchQuery({
+        queryKey: ['schools'],
+        queryFn: getSchools,
+      });
+      currentSchools = schoolsData?.schools || [];
+    }
+    
+    // Check for missing schools
+    const missingSchoolsList = validateSchools(csvData, currentSchools);
+    
+    if (missingSchoolsList.length > 0) {
+      // Prevent import if schools are missing
+      alert('Import cancelled. All schools must be in the database before importing. Please add missing schools in the Advanced tab.');
+      setShowSecondConfirm(false);
+      return;
+    }
+    
+    // Proceed with import
     setIsImporting(true);
     let successCount = 0;
     let errorCount = 0;
@@ -512,7 +467,11 @@ export default function Import() {
                 Clear
               </button>
               <button
-                onClick={() => setShowFirstConfirm(true)}
+                onClick={() => {
+                  // Check for missing schools before showing first confirm
+                  checkMissingSchools();
+                  setShowFirstConfirm(true);
+                }}
                 className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600"
               >
                 Import Students
@@ -661,15 +620,30 @@ export default function Import() {
               Do you want to import {csvData.length} student{csvData.length !== 1 ? 's' : ''}? 
               Please review all data before proceeding.
             </p>
+            {missingSchools.length > 0 && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <p className="text-sm text-yellow-800 font-medium">
+                  ⚠️ Warning: One or more of these schools inputted is not in the database currently. 
+                  To update it, go to the Advanced tab before submitting.
+                </p>
+              </div>
+            )}
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => setShowFirstConfirm(false)}
+                onClick={() => {
+                  setShowFirstConfirm(false);
+                  setMissingSchools([]);
+                }}
                 className="px-4 py-2 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600"
               >
                 Cancel
               </button>
               <button
                 onClick={() => {
+                  if (missingSchools.length > 0) {
+                    alert('Cannot proceed. Please add missing schools in the Advanced tab before importing.');
+                    return;
+                  }
                   setShowFirstConfirm(false);
                   setShowSecondConfirm(true);
                 }}
@@ -691,9 +665,20 @@ export default function Import() {
               Are you sure you want to import {csvData.length} student{csvData.length !== 1 ? 's' : ''}? 
               This action cannot be undone.
             </p>
+            {missingSchools.length > 0 && (
+              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <p className="text-sm text-yellow-800 font-medium">
+                  ⚠️ Warning: One or more of these schools inputted is not in the database currently. 
+                  To update it, go to the Advanced tab before submitting.
+                </p>
+              </div>
+            )}
             <div className="flex gap-3 justify-end">
               <button
-                onClick={() => setShowSecondConfirm(false)}
+                onClick={() => {
+                  setShowSecondConfirm(false);
+                  setMissingSchools([]);
+                }}
                 disabled={isImporting}
                 className="px-4 py-2 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600 disabled:opacity-50"
               >
@@ -701,7 +686,7 @@ export default function Import() {
               </button>
               <button
                 onClick={handleImport}
-                disabled={isImporting}
+                disabled={isImporting || missingSchools.length > 0}
                 className="px-4 py-2 text-sm bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
               >
                 {isImporting ? 'Importing...' : 'Yes, Import'}
@@ -711,33 +696,6 @@ export default function Import() {
         </div>
       )}
 
-      {/* School Validation Dialog */}
-      {showSchoolDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">School Not Found</h3>
-            <p className="text-gray-700 mb-6">
-              The school "<strong>{missingSchool}</strong>" is not in the database. 
-              Would you like to add it?
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => handleSchoolDialogResponse(false)}
-                className="px-4 py-2 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => handleSchoolDialogResponse(true)}
-                disabled={createSchoolMutation.isLoading}
-                className="px-4 py-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-              >
-                {createSchoolMutation.isLoading ? 'Adding...' : 'Add to Database'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -62,8 +62,17 @@ export const deleteScreener = (id) =>
 export const exportStateReport = (params) =>
   api.get('/exports/state', { params, responseType: 'blob' }).then(res => res.data);
 
-export const exportStickers = (params) =>
-  api.get('/exports/stickers', { params, responseType: 'blob' }).then(res => res.data);
+export const getStickerPreview = (params) =>
+  api.get('/exports/stickers/preview', { params }).then(res => res.data);
+
+export const exportStickers = (data) =>
+  api.post('/exports/stickers', data, { responseType: 'blob' }).then(res => res.data);
+
+export const getReportingData = (params) =>
+  api.get('/exports/reporting', { params }).then(res => res.data);
+
+export const updateReportingData = (data) =>
+  api.put('/exports/reporting', data).then(res => res.data);
 
 // Screening Data
 export const getScreeningData = (params) =>
