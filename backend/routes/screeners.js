@@ -112,22 +112,65 @@ router.put('/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'Screener name already exists' });
     }
     
-    // Update screener
-    const { data: screener, error: updateError } = await supabase
-      .from('screeners')
-      .update({ 
-        name: name.trim(), 
-        active: active !== undefined ? active : existing.active,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
+    // Prepare update data - ensure active is a boolean
+    const updateData = {
+      name: name.trim()
+    };
     
-    if (updateError) throw updateError;
+    // Handle active field - convert string to boolean if needed
+    if (active !== undefined) {
+      if (typeof active === 'boolean') {
+        updateData.active = active;
+      } else if (typeof active === 'string') {
+        updateData.active = active === 'true' || active === 'True';
+      } else {
+        updateData.active = Boolean(active);
+      }
+    } else {
+      updateData.active = existing.active;
+    }
+    
+    console.log('Update screener data:', updateData);
+    
+    // Update screener - use select() without single() to handle RLS cases
+    const { data: screenerData, error: updateError } = await supabase
+      .from('screeners')
+      .update(updateData)
+      .eq('id', id)
+      .select();
+    
+    if (updateError) {
+      console.error('Error updating screener:', updateError);
+      throw updateError;
+    }
+    
+    // Check if update was successful (even if we can't return the row due to RLS)
+    if (!screenerData || screenerData.length === 0) {
+      // Update might have succeeded but RLS prevents returning the row
+      // Fetch it again to verify
+      const { data: updatedScreener, error: fetchError } = await supabase
+        .from('screeners')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      
+      if (fetchError) {
+        console.error('Error fetching updated screener:', fetchError);
+        throw fetchError;
+      }
+      
+      if (!updatedScreener) {
+        return res.status(404).json({ error: 'Screener not found after update' });
+      }
+      
+      return res.json({
+        screener: updatedScreener,
+        message: 'Screener updated successfully'
+      });
+    }
     
     res.json({
-      screener: screener,
+      screener: screenerData[0],
       message: 'Screener updated successfully'
     });
     

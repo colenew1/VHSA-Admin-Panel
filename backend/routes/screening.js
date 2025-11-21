@@ -56,6 +56,7 @@ router.get('/data', async (req, res, next) => {
       school = 'all',
       startDate,
       endDate,
+      year,
       grade,
       gender,
       returning,
@@ -143,9 +144,19 @@ router.get('/data', async (req, res, next) => {
         .select('*')
         .in('unique_id', uniqueIds);
 
-      // Apply date filters on screening_results if provided
-      if (startDate) screeningQuery = screeningQuery.gte('initial_screening_date', startDate);
-      if (endDate) screeningQuery = screeningQuery.lte('initial_screening_date', endDate);
+      // Apply year filter if provided - uses created_at (when record was created/intaken)
+      // This is more accurate for tracking which screening cycle/year a record belongs to
+      // Otherwise use startDate/endDate filters on initial_screening_date
+      if (year) {
+        const yearStart = `${year}-01-01T00:00:00Z`;
+        const yearEnd = `${year}-12-31T23:59:59Z`;
+        screeningQuery = screeningQuery.gte('created_at', yearStart);
+        screeningQuery = screeningQuery.lte('created_at', yearEnd);
+      } else {
+        // Apply date filters on screening_results if provided
+        if (startDate) screeningQuery = screeningQuery.gte('initial_screening_date', startDate);
+        if (endDate) screeningQuery = screeningQuery.lte('initial_screening_date', endDate);
+      }
 
       const { data: screeningData, error: screeningError } = await screeningQuery;
       
@@ -153,17 +164,30 @@ router.get('/data', async (req, res, next) => {
         console.error('❌ Error fetching screening results:', screeningError);
       } else if (screeningData) {
         // Create map by unique_id
+        // If year filter is applied, we should only get one record per student for that year
+        // But if not, we'll keep the most recent one (for backwards compatibility)
         screeningData.forEach(row => {
           const uniqueId = row.unique_id;
           if (uniqueId) {
-            // If multiple screening records, keep the most recent one
-            if (!screeningMap[uniqueId] || 
-                new Date(row.initial_screening_date) > new Date(screeningMap[uniqueId].initial_screening_date)) {
-              screeningMap[uniqueId] = row;
+            // Extract year from created_at (when record was created/intaken)
+            // This represents which screening cycle/year this record belongs to
+            const rowYear = row.created_at 
+              ? new Date(row.created_at).getFullYear()
+              : (row.initial_screening_date ? new Date(row.initial_screening_date).getFullYear() : new Date().getFullYear());
+            
+            // If year filter is provided, we can have multiple records per student (different years)
+            // But for the same year, keep the most recent one
+            const key = year ? `${uniqueId}_${rowYear}` : uniqueId;
+            
+            // If multiple records for same year, keep the most recent one (by created_at)
+            if (!screeningMap[key] || 
+                new Date(row.created_at || row.initial_screening_date || 0) > 
+                new Date(screeningMap[key].created_at || screeningMap[key].initial_screening_date || 0)) {
+              screeningMap[key] = row;
             }
           }
         });
-        console.log(`✅ Found ${screeningData.length} screening records for ${Object.keys(screeningMap).length} students`);
+        console.log(`✅ Found ${screeningData.length} screening records for ${Object.keys(screeningMap).length} students${year ? ` (year: ${year})` : ''}`);
       }
     }
 

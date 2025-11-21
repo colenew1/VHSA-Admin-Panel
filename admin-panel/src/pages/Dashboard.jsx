@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getScreeningData, updateScreening, getSchools } from '../api/client';
 import { getRowStatus, getRowColor, hasFailedTest, formatDate, formatDOB, formatTestResult } from '../utils/statusHelpers';
@@ -35,6 +35,7 @@ export default function Dashboard() {
     school: 'all',
     startDate: '',
     endDate: '',
+    year: new Date().getFullYear().toString(), // Default to current year
     // Status checkboxes - all true by default (show all)
     statusNotStarted: true,
     statusCompleted: true,
@@ -73,6 +74,19 @@ export default function Dashboard() {
 
   const schools = schoolsData?.schools || [];
 
+  // Initialize default date range based on current year
+  useEffect(() => {
+    const currentYear = new Date().getFullYear();
+    if (!filters.startDate && !filters.endDate) {
+      setFilters(prev => ({
+        ...prev,
+        year: currentYear.toString(),
+        startDate: `${currentYear}-01-01`,
+        endDate: `${currentYear}-12-31`
+      }));
+    }
+  }, []); // Only run on mount
+
   // Fetch screening data - only when search has been triggered
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['screening', filters, pageSize, currentPage],
@@ -82,6 +96,7 @@ export default function Dashboard() {
       offset: currentPage * pageSize,
     }),
     enabled: hasSearched && !!(filters.startDate && filters.endDate), // Only fetch when search is clicked and dates are set
+    // Note: year filter is passed in filters object and will be used by backend
     refetchOnWindowFocus: false, // Don't auto-refresh on window focus
   });
 
@@ -175,7 +190,9 @@ export default function Dashboard() {
         return;
     }
     
-    setFilters({ ...filters, startDate: start, endDate: end });
+    // Update year filter based on the selected date range
+    const year = new Date(start).getFullYear();
+    setFilters({ ...filters, startDate: start, endDate: end, year: year.toString() });
     setCurrentPage(0);
     // Don't auto-trigger search, user must click Search button
   };
@@ -317,7 +334,7 @@ export default function Dashboard() {
 
       {/* Filters */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200 mb-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
           {/* School Filter */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">School</label>
@@ -335,6 +352,32 @@ export default function Dashboard() {
                   {school.name}
                 </option>
               ))}
+            </select>
+          </div>
+
+          {/* Year Filter */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Record Created Year</label>
+            <select
+              value={filters.year}
+              onChange={(e) => {
+                const selectedYear = e.target.value;
+                // Auto-set date range to that year (for display purposes)
+                setFilters({ 
+                  ...filters, 
+                  year: selectedYear,
+                  startDate: `${selectedYear}-01-01`,
+                  endDate: `${selectedYear}-12-31`
+                });
+                setCurrentPage(0);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+              title="Filter by the year the screening record was created (when student was intaken/imported)"
+            >
+              {Array.from({ length: 6 }, (_, i) => {
+                const year = new Date().getFullYear() - i;
+                return <option key={year} value={year}>{year}</option>;
+              })}
             </select>
           </div>
 
