@@ -299,7 +299,7 @@ function getStudentStatus(student, screening) {
 // Get sticker preview data (JSON, for editing before export)
 router.get('/stickers/preview', async (req, res, next) => {
   try {
-    const { school, status } = req.query;
+    const { school, status, year } = req.query;
     
     if (!school || school === 'all') {
       return res.status(400).json({ error: 'School is required for sticker export' });
@@ -318,16 +318,27 @@ router.get('/stickers/preview', async (req, res, next) => {
     
     if (studentsError) throw studentsError;
     
-    // Get screening results for these students
+    // Get screening results for these students, filtered by year if provided
     const studentIds = students.map(s => s.unique_id).filter(Boolean);
     let screenings = [];
     
     if (studentIds.length > 0) {
-      const { data: screeningData, error: screeningError } = await supabase
+      let screeningQuery = supabase
         .from('screening_results')
         .select('*')
         .in('unique_id', studentIds);
       
+      // Filter by created_at year if year is provided
+      if (year) {
+        const yearNum = parseInt(year);
+        const yearStart = `${yearNum}-01-01T00:00:00.000Z`;
+        const yearEnd = `${yearNum}-12-31T23:59:59.999Z`;
+        screeningQuery = screeningQuery
+          .gte('created_at', yearStart)
+          .lte('created_at', yearEnd);
+      }
+      
+      const { data: screeningData, error: screeningError } = await screeningQuery;
       if (screeningError) throw screeningError;
       screenings = screeningData || [];
     }
@@ -382,6 +393,7 @@ router.post('/stickers', async (req, res, next) => {
     } else {
       // Fetch data based on filters (same logic as preview)
       const statusFilters = status ? status.split(',') : ['incomplete', 'completed', 'not_started', 'absent'];
+      const { year } = req.body;
       
       const { data: students, error: studentsError } = await supabase
         .from('students')
@@ -396,11 +408,22 @@ router.post('/stickers', async (req, res, next) => {
       let screenings = [];
       
       if (studentIds.length > 0) {
-        const { data: screeningData, error: screeningError } = await supabase
+        let screeningQuery = supabase
           .from('screening_results')
           .select('*')
           .in('unique_id', studentIds);
         
+        // Filter by created_at year if year is provided
+        if (year) {
+          const yearNum = parseInt(year);
+          const yearStart = `${yearNum}-01-01T00:00:00.000Z`;
+          const yearEnd = `${yearNum}-12-31T23:59:59.999Z`;
+          screeningQuery = screeningQuery
+            .gte('created_at', yearStart)
+            .lte('created_at', yearEnd);
+        }
+        
+        const { data: screeningData, error: screeningError } = await screeningQuery;
         if (screeningError) throw screeningError;
         screenings = screeningData || [];
       }
@@ -545,7 +568,7 @@ router.post('/stickers', async (req, res, next) => {
 // Get reporting data
 router.get('/reporting', async (req, res, next) => {
   try {
-    const { school = 'all', startDate, endDate } = req.query;
+    const { school = 'all', startDate, endDate, year } = req.query;
     
     // Build query to get students with their screening results
     let studentsQuery = supabase
@@ -576,11 +599,22 @@ router.get('/reporting', async (req, res, next) => {
         .select('*')
         .in('unique_id', studentIds);
       
-      if (startDate) {
-        screeningQuery = screeningQuery.gte('initial_screening_date', startDate);
-      }
-      if (endDate) {
-        screeningQuery = screeningQuery.lte('initial_screening_date', endDate);
+      // Filter by created_at year if year is provided (takes precedence over date range)
+      if (year) {
+        const yearNum = parseInt(year);
+        const yearStart = `${yearNum}-01-01T00:00:00.000Z`;
+        const yearEnd = `${yearNum}-12-31T23:59:59.999Z`;
+        screeningQuery = screeningQuery
+          .gte('created_at', yearStart)
+          .lte('created_at', yearEnd);
+      } else {
+        // Fall back to initial_screening_date if no year is provided
+        if (startDate) {
+          screeningQuery = screeningQuery.gte('initial_screening_date', startDate);
+        }
+        if (endDate) {
+          screeningQuery = screeningQuery.lte('initial_screening_date', endDate);
+        }
       }
       
       const { data: screeningData, error: screeningsError } = await screeningQuery;

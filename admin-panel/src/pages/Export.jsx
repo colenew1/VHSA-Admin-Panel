@@ -6,6 +6,9 @@ import EditableCell from '../components/EditableCell';
 export default function Export() {
   const [activeTab, setActiveTab] = useState('sticker');
   
+  // Year filter (shared across both tabs)
+  const [year, setYear] = useState(new Date().getFullYear().toString());
+  
   // Sticker tab state
   const [selectedSchool, setSelectedSchool] = useState('');
   const [statusFilters, setStatusFilters] = useState({
@@ -37,11 +40,12 @@ export default function Export() {
   
   // Fetch reporting data
   const { data: reportingData, isLoading: loadingReporting } = useQuery({
-    queryKey: ['reporting', reportSchool, startDate, endDate],
+    queryKey: ['reporting', reportSchool, startDate, endDate, year],
     queryFn: () => getReportingData({
       school: reportSchool,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
+      year: year || undefined,
     }),
     enabled: shouldFetch, // Only fetch when Generate Report is clicked
   });
@@ -93,7 +97,8 @@ export default function Export() {
     try {
       const data = await getStickerPreview({
         school: selectedSchool,
-        status: selectedStatuses.join(',')
+        status: selectedStatuses.join(','),
+        year: year || undefined
       });
       setStickerPreview(data.stickers || []);
     } catch (error) {
@@ -136,7 +141,8 @@ export default function Export() {
       const blob = await exportStickers({
         school: selectedSchool,
         stickerData: stickerPreview,
-        status: selectedStatuses.join(',')
+        status: selectedStatuses.join(','),
+        year: year || undefined
       });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -156,8 +162,12 @@ export default function Export() {
   // Handle generate report
   const handleGenerateReport = () => {
     setShouldFetch(true);
-    queryClient.invalidateQueries(['reporting', reportSchool, startDate, endDate]);
+    queryClient.invalidateQueries(['reporting', reportSchool, startDate, endDate, year]);
   };
+  
+  // Generate year options (last 6 years)
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - i);
   
   // Handle cell change in reporting table
   const handleReportCellChange = (gradeIndex, field, subField, value) => {
@@ -194,6 +204,31 @@ export default function Export() {
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Export</h1>
+      
+      {/* Year Filter - Shared across both tabs */}
+      <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Record Created Year
+        </label>
+        <select
+          value={year}
+          onChange={(e) => {
+            setYear(e.target.value);
+            // Clear preview/data when year changes
+            setStickerPreview(null);
+            setReportData(null);
+            setShouldFetch(false);
+          }}
+          className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md text-sm"
+        >
+          {yearOptions.map(y => (
+            <option key={y} value={y.toString()}>{y}</option>
+          ))}
+        </select>
+        <p className="mt-2 text-xs text-gray-500">
+          Filter by the year the screening record was created in the database
+        </p>
+      </div>
       
       {/* Tabs */}
       <div className="border-b border-gray-200 mb-6">
