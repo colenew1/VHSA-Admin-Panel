@@ -2,12 +2,61 @@ import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
+// Log API URL for debugging (only in development or if not set)
+if (!import.meta.env.VITE_API_URL || import.meta.env.DEV) {
+  console.log('🔗 API URL:', API_URL);
+  console.log('🔗 Full API Base URL:', `${API_URL}/api`);
+}
+
 const api = axios.create({
   baseURL: `${API_URL}/api`,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 second timeout
 });
+
+// Add request interceptor for debugging
+api.interceptors.request.use(
+  (config) => {
+    console.log('📤 API Request:', config.method?.toUpperCase(), config.url);
+    return config;
+  },
+  (error) => {
+    console.error('❌ Request Error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for error handling
+api.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    if (error.code === 'ERR_NETWORK') {
+      console.error('❌ Network Error:', {
+        message: error.message,
+        code: error.code,
+        apiUrl: API_URL,
+        fullUrl: error.config?.url,
+        baseURL: error.config?.baseURL,
+      });
+      console.error('💡 Check: Is VITE_API_URL set correctly in Netlify?');
+      console.error('💡 Check: Is the backend server running?');
+    } else if (error.response) {
+      console.error('❌ API Error Response:', {
+        status: error.response.status,
+        statusText: error.response.statusText,
+        data: error.response.data,
+        url: error.config?.url,
+      });
+    } else {
+      console.error('❌ API Error:', error);
+    }
+    return Promise.reject(error);
+  }
+);
 
 // Dashboard
 export const getDashboard = (params) => 
