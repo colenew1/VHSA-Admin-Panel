@@ -27,6 +27,10 @@ export default function Export() {
   const [endDate, setEndDate] = useState('');
   const [reportData, setReportData] = useState(null);
   const [shouldFetch, setShouldFetch] = useState(false);
+  const [notes, setNotes] = useState('');
+  const [isNotesExpanded, setIsNotesExpanded] = useState(false);
+  const [isEditingReport, setIsEditingReport] = useState(false);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
   
   const queryClient = useQueryClient();
   
@@ -50,10 +54,14 @@ export default function Export() {
     enabled: shouldFetch, // Only fetch when Generate Report is clicked
   });
   
+  // Store original data for cancel
+  const [originalReportData, setOriginalReportData] = useState(null);
+  
   // Update reportData when reportingData changes
   useEffect(() => {
     if (reportingData) {
       setReportData(reportingData);
+      setOriginalReportData(JSON.parse(JSON.stringify(reportingData))); // Deep copy
     }
   }, [reportingData]);
   
@@ -62,9 +70,12 @@ export default function Export() {
     mutationFn: updateReportingData,
     onSuccess: () => {
       alert('Reporting data saved successfully!');
+      setIsEditingReport(false);
+      setShowSaveConfirm(false);
     },
     onError: (error) => {
       alert(`Error saving reporting data: ${error.response?.data?.error || error.message}`);
+      setShowSaveConfirm(false);
     },
   });
   
@@ -194,10 +205,32 @@ export default function Export() {
     setReportData(updated);
   };
   
-  // Handle save reporting changes
+  // Handle edit mode toggle
+  const handleEditReport = () => {
+    setIsEditingReport(true);
+  };
+  
+  // Handle cancel edit
+  const handleCancelEdit = () => {
+    setIsEditingReport(false);
+    // Reload original data to discard changes
+    if (originalReportData) {
+      setReportData(JSON.parse(JSON.stringify(originalReportData)));
+    }
+  };
+  
+  // Handle save reporting changes with confirmation
   const handleSaveReporting = () => {
     if (!reportData) return;
+    setShowSaveConfirm(true);
+  };
+  
+  // Confirm save
+  const handleConfirmSave = () => {
+    if (!reportData) return;
     updateReportingMutation.mutate(reportData);
+    setIsEditingReport(false);
+    setShowSaveConfirm(false);
   };
   
   // Handle export reporting as PDF
@@ -215,7 +248,8 @@ export default function Export() {
         school: reportSchool,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
-        year: year || undefined
+        year: year || undefined,
+        notes: notes || undefined
       });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -518,6 +552,27 @@ export default function Export() {
                 {loadingReporting ? 'Generating...' : 'Generate Report'}
               </button>
             </div>
+            
+            {/* Notes Section */}
+            <div className="mt-6 border border-gray-300 rounded-lg">
+              <button
+                onClick={() => setIsNotesExpanded(!isNotesExpanded)}
+                className="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 flex justify-between items-center rounded-t-lg"
+              >
+                <span className="font-medium text-gray-700">Notes</span>
+                <span className="text-gray-500">{isNotesExpanded ? '▼' : '▶'}</span>
+              </button>
+              {isNotesExpanded && (
+                <div className="p-4">
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Enter notes here..."
+                    className="w-full h-48 px-3 py-2 border border-gray-300 rounded-md text-sm resize-y"
+                  />
+                </div>
+              )}
+            </div>
           </div>
           
           {/* Reporting Table */}
@@ -533,13 +588,30 @@ export default function Export() {
                   >
                     {isExportingPDF ? 'Exporting PDF...' : 'Download PDF'}
                   </button>
-                  <button
-                    onClick={handleSaveReporting}
-                    disabled={updateReportingMutation.isLoading}
-                    className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
-                  >
-                    {updateReportingMutation.isLoading ? 'Saving...' : 'Save Changes'}
-                  </button>
+                  {!isEditingReport ? (
+                    <button
+                      onClick={handleEditReport}
+                      className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
+                    >
+                      Edit
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={handleCancelEdit}
+                        className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveReporting}
+                        disabled={updateReportingMutation.isLoading}
+                        className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
+                      >
+                        {updateReportingMutation.isLoading ? 'Saving...' : 'Save Changes'}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               
@@ -570,57 +642,77 @@ export default function Export() {
                     <tr className="bg-blue-50 font-semibold">
                       <td className="border border-gray-300 px-3 py-2">TOTAL</td>
                       <td className="border border-gray-300 px-3 py-2">
-                        <EditableCell
-                          value={reportData.summary.totalStudents || 0}
-                          onChange={(value) => handleReportCellChange(-1, 'totalStudents', null, value)}
-                          type="number"
-                          className="text-sm w-full font-semibold"
-                        />
+                        {isEditingReport ? (
+                          <EditableCell
+                            value={reportData.summary.totalStudents || 0}
+                            onChange={(value) => handleReportCellChange(-1, 'totalStudents', null, value)}
+                            type="number"
+                            className="text-sm w-full font-semibold"
+                          />
+                        ) : (
+                          <span className="text-sm font-semibold">{reportData.summary.totalStudents || 0}</span>
+                        )}
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
                         <div className="flex gap-1">
-                          <EditableCell
-                            value={reportData.summary.totalVision || 0}
-                            onChange={(value) => handleReportCellChange(-1, 'totalVision', null, value)}
-                            type="number"
-                            className="text-sm w-16"
-                          />
+                          {isEditingReport ? (
+                            <EditableCell
+                              value={reportData.summary.totalVision || 0}
+                              onChange={(value) => handleReportCellChange(-1, 'totalVision', null, value)}
+                              type="number"
+                              className="text-sm w-16"
+                            />
+                          ) : (
+                            <span className="text-sm">{reportData.summary.totalVision || 0}</span>
+                          )}
                           <span>/</span>
                           <span className="text-gray-500">-</span>
                         </div>
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
                         <div className="flex gap-1">
-                          <EditableCell
-                            value={reportData.summary.totalHearing || 0}
-                            onChange={(value) => handleReportCellChange(-1, 'totalHearing', null, value)}
-                            type="number"
-                            className="text-sm w-16"
-                          />
+                          {isEditingReport ? (
+                            <EditableCell
+                              value={reportData.summary.totalHearing || 0}
+                              onChange={(value) => handleReportCellChange(-1, 'totalHearing', null, value)}
+                              type="number"
+                              className="text-sm w-16"
+                            />
+                          ) : (
+                            <span className="text-sm">{reportData.summary.totalHearing || 0}</span>
+                          )}
                           <span>/</span>
                           <span className="text-gray-500">-</span>
                         </div>
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
                         <div className="flex gap-1">
-                          <EditableCell
-                            value={reportData.summary.totalAcanthosis || 0}
-                            onChange={(value) => handleReportCellChange(-1, 'totalAcanthosis', null, value)}
-                            type="number"
-                            className="text-sm w-16"
-                          />
+                          {isEditingReport ? (
+                            <EditableCell
+                              value={reportData.summary.totalAcanthosis || 0}
+                              onChange={(value) => handleReportCellChange(-1, 'totalAcanthosis', null, value)}
+                              type="number"
+                              className="text-sm w-16"
+                            />
+                          ) : (
+                            <span className="text-sm">{reportData.summary.totalAcanthosis || 0}</span>
+                          )}
                           <span>/</span>
                           <span className="text-gray-500">-</span>
                         </div>
                       </td>
                       <td className="border border-gray-300 px-3 py-2">
                         <div className="flex gap-1">
-                          <EditableCell
-                            value={reportData.summary.totalScoliosis || 0}
-                            onChange={(value) => handleReportCellChange(-1, 'totalScoliosis', null, value)}
-                            type="number"
-                            className="text-sm w-16"
-                          />
+                          {isEditingReport ? (
+                            <EditableCell
+                              value={reportData.summary.totalScoliosis || 0}
+                              onChange={(value) => handleReportCellChange(-1, 'totalScoliosis', null, value)}
+                              type="number"
+                              className="text-sm w-16"
+                            />
+                          ) : (
+                            <span className="text-sm">{reportData.summary.totalScoliosis || 0}</span>
+                          )}
                           <span>/</span>
                           <span className="text-gray-500">-</span>
                         </div>
@@ -635,88 +727,128 @@ export default function Export() {
                       <tr key={gradeData.grade}>
                         <td className="border border-gray-300 px-3 py-2 font-medium">{gradeData.grade}</td>
                         <td className="border border-gray-300 px-3 py-2">
-                          <EditableCell
-                            value={gradeData.totalStudents || 0}
-                            onChange={(value) => handleReportCellChange(index, 'totalStudents', null, value)}
-                            type="number"
-                            className="text-sm w-full"
-                          />
+                          {isEditingReport ? (
+                            <EditableCell
+                              value={gradeData.totalStudents || 0}
+                              onChange={(value) => handleReportCellChange(index, 'totalStudents', null, value)}
+                              type="number"
+                              className="text-sm w-full"
+                            />
+                          ) : (
+                            <span className="text-sm">{gradeData.totalStudents || 0}</span>
+                          )}
                         </td>
                         <td className="border border-gray-300 px-3 py-2">
                           <div className="flex gap-1 items-center">
-                            <EditableCell
-                              value={gradeData.vision.screened || 0}
-                              onChange={(value) => handleReportCellChange(index, 'vision', 'screened', value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
+                            {isEditingReport ? (
+                              <EditableCell
+                                value={gradeData.vision.screened || 0}
+                                onChange={(value) => handleReportCellChange(index, 'vision', 'screened', value)}
+                                type="number"
+                                className="text-sm w-16"
+                              />
+                            ) : (
+                              <span className="text-sm">{gradeData.vision.screened || 0}</span>
+                            )}
                             <span>/</span>
-                            <EditableCell
-                              value={gradeData.vision.failed || 0}
-                              onChange={(value) => handleReportCellChange(index, 'vision', 'failed', value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
+                            {isEditingReport ? (
+                              <EditableCell
+                                value={gradeData.vision.failed || 0}
+                                onChange={(value) => handleReportCellChange(index, 'vision', 'failed', value)}
+                                type="number"
+                                className="text-sm w-16"
+                              />
+                            ) : (
+                              <span className="text-sm">{gradeData.vision.failed || 0}</span>
+                            )}
                           </div>
                         </td>
                         <td className="border border-gray-300 px-3 py-2">
                           <div className="flex gap-1 items-center">
-                            <EditableCell
-                              value={gradeData.hearing.screened || 0}
-                              onChange={(value) => handleReportCellChange(index, 'hearing', 'screened', value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
+                            {isEditingReport ? (
+                              <EditableCell
+                                value={gradeData.hearing.screened || 0}
+                                onChange={(value) => handleReportCellChange(index, 'hearing', 'screened', value)}
+                                type="number"
+                                className="text-sm w-16"
+                              />
+                            ) : (
+                              <span className="text-sm">{gradeData.hearing.screened || 0}</span>
+                            )}
                             <span>/</span>
-                            <EditableCell
-                              value={gradeData.hearing.failed || 0}
-                              onChange={(value) => handleReportCellChange(index, 'hearing', 'failed', value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
+                            {isEditingReport ? (
+                              <EditableCell
+                                value={gradeData.hearing.failed || 0}
+                                onChange={(value) => handleReportCellChange(index, 'hearing', 'failed', value)}
+                                type="number"
+                                className="text-sm w-16"
+                              />
+                            ) : (
+                              <span className="text-sm">{gradeData.hearing.failed || 0}</span>
+                            )}
                           </div>
                         </td>
                         <td className="border border-gray-300 px-3 py-2">
                           <div className="flex gap-1 items-center">
-                            <EditableCell
-                              value={gradeData.acanthosis.screened || 0}
-                              onChange={(value) => handleReportCellChange(index, 'acanthosis', 'screened', value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
+                            {isEditingReport ? (
+                              <EditableCell
+                                value={gradeData.acanthosis.screened || 0}
+                                onChange={(value) => handleReportCellChange(index, 'acanthosis', 'screened', value)}
+                                type="number"
+                                className="text-sm w-16"
+                              />
+                            ) : (
+                              <span className="text-sm">{gradeData.acanthosis.screened || 0}</span>
+                            )}
                             <span>/</span>
-                            <EditableCell
-                              value={gradeData.acanthosis.failed || 0}
-                              onChange={(value) => handleReportCellChange(index, 'acanthosis', 'failed', value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
+                            {isEditingReport ? (
+                              <EditableCell
+                                value={gradeData.acanthosis.failed || 0}
+                                onChange={(value) => handleReportCellChange(index, 'acanthosis', 'failed', value)}
+                                type="number"
+                                className="text-sm w-16"
+                              />
+                            ) : (
+                              <span className="text-sm">{gradeData.acanthosis.failed || 0}</span>
+                            )}
                           </div>
                         </td>
                         <td className="border border-gray-300 px-3 py-2">
                           <div className="flex gap-1 items-center">
-                            <EditableCell
-                              value={gradeData.scoliosis.screened || 0}
-                              onChange={(value) => handleReportCellChange(index, 'scoliosis', 'screened', value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
+                            {isEditingReport ? (
+                              <EditableCell
+                                value={gradeData.scoliosis.screened || 0}
+                                onChange={(value) => handleReportCellChange(index, 'scoliosis', 'screened', value)}
+                                type="number"
+                                className="text-sm w-16"
+                              />
+                            ) : (
+                              <span className="text-sm">{gradeData.scoliosis.screened || 0}</span>
+                            )}
                             <span>/</span>
-                            <EditableCell
-                              value={gradeData.scoliosis.failed || 0}
-                              onChange={(value) => handleReportCellChange(index, 'scoliosis', 'failed', value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
+                            {isEditingReport ? (
+                              <EditableCell
+                                value={gradeData.scoliosis.failed || 0}
+                                onChange={(value) => handleReportCellChange(index, 'scoliosis', 'failed', value)}
+                                type="number"
+                                className="text-sm w-16"
+                              />
+                            ) : (
+                              <span className="text-sm">{gradeData.scoliosis.failed || 0}</span>
+                            )}
                           </div>
                         </td>
                         <td className="border border-gray-300 px-3 py-2">
-                          <EditableCell
-                            value={gradeData.glassesContacts || 0}
-                            onChange={(value) => handleReportCellChange(index, 'glassesContacts', null, value)}
-                            type="number"
-                            className="text-sm w-full"
-                          />
+                          {isEditingReport ? (
+                            <EditableCell
+                              value={gradeData.glassesContacts || 0}
+                              onChange={(value) => handleReportCellChange(index, 'glassesContacts', null, value)}
+                              type="number"
+                              className="text-sm w-full"
+                            />
+                          ) : (
+                            <span className="text-sm">{gradeData.glassesContacts || 0}</span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -737,6 +869,31 @@ export default function Export() {
               Generating report...
             </div>
           )}
+        </div>
+      )}
+      
+      {/* Save Confirmation Dialog */}
+      {showSaveConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Save</h3>
+            <p className="text-gray-700 mb-6">Are you sure you want to save these changes?</p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowSaveConfirm(false)}
+                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSave}
+                disabled={updateReportingMutation.isLoading}
+                className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
+              >
+                {updateReportingMutation.isLoading ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

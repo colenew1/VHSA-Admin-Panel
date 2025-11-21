@@ -210,10 +210,12 @@ router.get('/data', async (req, res, next) => {
         school: student.school || '',
         teacher: student.teacher || '',
         status: student.status || '',
+        notes: student.notes || '', // Student notes
         // Screening data - null if not screened yet
         initial_screening_date: screeningRow?.initial_screening_date || null,
         was_absent: screeningRow?.was_absent ?? false,
         glasses_or_contacts: screeningRow?.vision_initial_glasses || screeningRow?.vision_rescreen_glasses || null,
+        status_override: screeningRow?.status_override || null, // Manual status override
         // Vision - using correct field names (null if not screened)
         vision_required: screeningRow?.vision_required ?? false,
         vision_complete: screeningRow?.vision_complete ?? false,
@@ -338,6 +340,7 @@ router.put('/:unique_id', async (req, res, next) => {
     if (updateData.teacher !== undefined) studentDataFields.teacher = updateData.teacher;
     if (updateData.status !== undefined) studentDataFields.status = updateData.status;
     if (updateData.unique_id !== undefined) studentDataFields.unique_id = updateData.unique_id;
+    if (updateData.notes !== undefined) studentDataFields.notes = updateData.notes;
 
     // Remove student metadata fields from updateData for screening_results
     delete updateData.student_id;
@@ -350,6 +353,7 @@ router.put('/:unique_id', async (req, res, next) => {
     delete updateData.school;
     delete updateData.teacher;
     delete updateData.status;
+    delete updateData.notes;
 
     // Map frontend field names to database column names
     const fieldMapping = {
@@ -357,6 +361,7 @@ router.put('/:unique_id', async (req, res, next) => {
       'initial_screening_date': 'initial_screening_date',
       'was_absent': 'was_absent',
       'glasses_or_contacts': null, // This is derived from vision_initial_glasses or vision_rescreen_glasses
+      'status_override': 'status_override', // Manual status override
       // Vision
       'vision_required': 'vision_required',
       'vision_complete': 'vision_complete',

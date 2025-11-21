@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { searchStudentsById, searchStudentsByName, getStudentByUniqueId, createStudent, getSchools, updateScreening } from '../api/client';
+import { searchStudentsById, searchStudentsByName, getStudentByUniqueId, createStudent, getSchools, updateScreening, searchStudentsWithNotes } from '../api/client';
 import { getRowStatus, getRowColor, hasFailedTest, formatDate, formatDOB, formatTestResult } from '../utils/statusHelpers';
 import EditableCell from '../components/EditableCell';
 
@@ -47,7 +47,7 @@ const GRADE_OPTIONS = [
 
 export default function Search() {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState('search'); // 'search' or 'add'
+  const [activeTab, setActiveTab] = useState('search'); // 'search', 'add', or 'searchNotes'
   const [searchType, setSearchType] = useState('id'); // 'id' or 'name'
   const [searchStudentId, setSearchStudentId] = useState('');
   const [searchLastName, setSearchLastName] = useState('');
@@ -64,6 +64,22 @@ export default function Search() {
   const [isSearching, setIsSearching] = useState(false);
   const [showSuccessDialog, setShowSuccessDialog] = useState(false);
   const [createdStudentId, setCreatedStudentId] = useState(null);
+
+  // Search Notes state
+  const [notesSearchFilters, setNotesSearchFilters] = useState({
+    school: 'all',
+    year: new Date().getFullYear().toString(),
+    startDate: '',
+    endDate: '',
+    createdStartDate: '',
+    createdEndDate: '',
+    grade: '',
+    hasNotes: 'all' // 'all', 'yes', 'no'
+  });
+  const [notesSearchResults, setNotesSearchResults] = useState([]);
+  const [isSearchingNotes, setIsSearchingNotes] = useState(false);
+  const [hasSearchedNotes, setHasSearchedNotes] = useState(false);
+  const [showAdvancedNotesFilters, setShowAdvancedNotesFilters] = useState(false);
 
   // Add Student form state
   const [newStudent, setNewStudent] = useState({
@@ -85,6 +101,19 @@ export default function Search() {
   });
 
   const schools = schoolsData?.schools || [];
+
+  // Initialize year filter date range
+  useEffect(() => {
+    if (activeTab === 'searchNotes' && !notesSearchFilters.createdStartDate && !notesSearchFilters.createdEndDate) {
+      const currentYear = new Date().getFullYear();
+      setNotesSearchFilters(prev => ({
+        ...prev,
+        year: currentYear.toString(),
+        createdStartDate: `${currentYear}-01-01`,
+        createdEndDate: `${currentYear}-12-31`
+      }));
+    }
+  }, [activeTab]);
 
   // Get selected student details
   const { data: studentDetails, isLoading: loadingStudent } = useQuery({
@@ -167,6 +196,29 @@ export default function Search() {
     setEditingRowId(null);
     setUnsavedChanges({});
     setSearchResults([]);
+    // Reset notes search
+    setNotesSearchResults([]);
+    setHasSearchedNotes(false);
+  };
+
+  // Handle Search Notes
+  const handleSearchNotes = async () => {
+    setIsSearchingNotes(true);
+    setHasSearchedNotes(true);
+    try {
+      const result = await searchStudentsWithNotes(notesSearchFilters);
+      if (result && result.students) {
+        setNotesSearchResults(result.students);
+      } else {
+        setNotesSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Search notes error:', error);
+      alert('Failed to search notes. Please try again.');
+      setNotesSearchResults([]);
+    } finally {
+      setIsSearchingNotes(false);
+    }
   };
 
   const handleSelectStudent = (uniqueId) => {
@@ -336,6 +388,19 @@ export default function Search() {
             }`}
           >
             Add Student
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('searchNotes');
+              handleReset();
+            }}
+            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'searchNotes'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            Search Notes
           </button>
         </div>
 
@@ -1187,6 +1252,283 @@ export default function Search() {
                 {createStudentMutation.isLoading ? 'Creating...' : 'Create Student & Continue'}
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Search Notes Tab Content */}
+        {activeTab === 'searchNotes' && (
+          <div className="p-6">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Search Notes</h2>
+            
+            {/* Search Filters */}
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                {/* School Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">School</label>
+                  <select
+                    value={notesSearchFilters.school}
+                    onChange={(e) => setNotesSearchFilters({ ...notesSearchFilters, school: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  >
+                    <option value="all">All Schools</option>
+                    {schools.map((school) => (
+                      <option key={school.id} value={school.name}>
+                        {school.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Year Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Record Created Year</label>
+                  <select
+                    value={notesSearchFilters.year}
+                    onChange={(e) => {
+                      const selectedYear = e.target.value;
+                      setNotesSearchFilters({ 
+                        ...notesSearchFilters, 
+                        year: selectedYear,
+                        createdStartDate: `${selectedYear}-01-01`,
+                        createdEndDate: `${selectedYear}-12-31`
+                      });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  >
+                    {Array.from({ length: 6 }, (_, i) => {
+                      const year = new Date().getFullYear() - i;
+                      return <option key={year} value={year}>{year}</option>;
+                    })}
+                  </select>
+                </div>
+
+                {/* Has Notes Filter */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Has Notes</label>
+                  <select
+                    value={notesSearchFilters.hasNotes}
+                    onChange={(e) => setNotesSearchFilters({ ...notesSearchFilters, hasNotes: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  >
+                    <option value="all">All Students</option>
+                    <option value="yes">With Notes Only</option>
+                    <option value="no">Without Notes Only</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Advanced Filters Toggle */}
+              <div className="mb-4">
+                <button
+                  onClick={() => setShowAdvancedNotesFilters(!showAdvancedNotesFilters)}
+                  className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                >
+                  {showAdvancedNotesFilters ? '▼' : '▶'} Advanced Filters
+                </button>
+              </div>
+
+              {/* Advanced Filters */}
+              {showAdvancedNotesFilters && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 p-4 bg-white rounded border border-gray-200">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Screening Date From</label>
+                    <input
+                      type="date"
+                      value={notesSearchFilters.startDate}
+                      onChange={(e) => setNotesSearchFilters({ ...notesSearchFilters, startDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Screening Date To</label>
+                    <input
+                      type="date"
+                      value={notesSearchFilters.endDate}
+                      onChange={(e) => setNotesSearchFilters({ ...notesSearchFilters, endDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Record Created From</label>
+                    <input
+                      type="date"
+                      value={notesSearchFilters.createdStartDate}
+                      onChange={(e) => setNotesSearchFilters({ ...notesSearchFilters, createdStartDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Record Created To</label>
+                    <input
+                      type="date"
+                      value={notesSearchFilters.createdEndDate}
+                      onChange={(e) => setNotesSearchFilters({ ...notesSearchFilters, createdEndDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Grade</label>
+                    <input
+                      type="text"
+                      value={notesSearchFilters.grade}
+                      onChange={(e) => setNotesSearchFilters({ ...notesSearchFilters, grade: e.target.value })}
+                      placeholder="e.g., 1st,2nd,3rd or leave blank for all"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Search Button */}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSearchNotes}
+                  disabled={isSearchingNotes}
+                  className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isSearchingNotes ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Searching...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      Search
+                    </>
+                  )}
+                </button>
+                {hasSearchedNotes && (
+                  <button
+                    onClick={() => {
+                      setNotesSearchResults([]);
+                      setHasSearchedNotes(false);
+                    }}
+                    className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+                  >
+                    Clear Results
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Search Results */}
+            {hasSearchedNotes && (
+              <div className="space-y-4">
+                {isSearchingNotes ? (
+                  <div className="text-center py-8">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                    <p className="mt-2 text-gray-600">Searching...</p>
+                  </div>
+                ) : notesSearchResults.length === 0 ? (
+                  <div className="text-center py-8 text-gray-600">
+                    No students found matching your search criteria.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-lg font-semibold text-gray-900">
+                        Found {notesSearchResults.length} student{notesSearchResults.length !== 1 ? 's' : ''}
+                      </h3>
+                    </div>
+                    <div className="space-y-4">
+                      {notesSearchResults.map((student) => {
+                        const studentStatus = getRowStatus(student);
+                        const studentColor = getRowColor(studentStatus);
+                        const studentFailed = hasFailedTest(student);
+                        
+                        return (
+                          <div
+                            key={student.unique_id}
+                            className={`bg-white rounded-lg shadow-sm border-2 p-6 ${
+                              studentFailed ? 'border-red-500' : 'border-gray-200'
+                            }`}
+                          >
+                            {/* Student Info Header */}
+                            <div className="flex items-start justify-between mb-4 pb-4 border-b border-gray-200">
+                              <div>
+                                <h4 className="text-xl font-bold text-gray-900">
+                                  {student.last_name}, {student.first_name}
+                                </h4>
+                                <div className="text-sm text-gray-600 mt-1">
+                                  {student.unique_id && `ID: ${student.unique_id}`} • {student.grade} • {student.school}
+                                  {student.teacher && ` • Teacher: ${student.teacher}`}
+                                </div>
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {student.initial_screening_date && `Screened: ${formatDate(student.initial_screening_date)}`}
+                                  {student.screening_created_at && ` • Record Created: ${formatDate(student.screening_created_at)}`}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className={`text-xs px-2 py-1 rounded ${
+                                  studentStatus === 'completed' ? 'bg-green-100 text-green-800' :
+                                  studentStatus === 'incomplete' ? 'bg-amber-100 text-amber-800' :
+                                  studentStatus === 'absent' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {studentStatus === 'completed' ? 'Completed' :
+                                   studentStatus === 'incomplete' ? 'Incomplete' :
+                                   studentStatus === 'absent' ? 'Absent' :
+                                   'Not Started'}
+                                </div>
+                                {studentFailed && (
+                                  <div className="text-xs text-red-600 font-semibold mt-1">
+                                    Failed Test
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Screening Results Summary */}
+                            <div className="mb-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <span className="font-medium text-gray-700">Vision:</span>{' '}
+                                {student.vision_initial_right || student.vision_initial_left 
+                                  ? `${student.vision_initial_right || 'N/A'}/${student.vision_initial_left || 'N/A'}` 
+                                  : 'Not screened'}
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-700">Hearing:</span>{' '}
+                                {student.hearing_initial_right_1000 
+                                  ? `${formatTestResult(student.hearing_initial_right_1000)}/${formatTestResult(student.hearing_initial_left_1000)}` 
+                                  : 'Not screened'}
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-700">AN:</span>{' '}
+                                {student.acanthosis_initial ? formatTestResult(student.acanthosis_initial) : 'Not screened'}
+                              </div>
+                              <div>
+                                <span className="font-medium text-gray-700">Spinal:</span>{' '}
+                                {student.scoliosis_initial ? formatTestResult(student.scoliosis_initial) : 'Not screened'}
+                              </div>
+                            </div>
+
+                            {/* Notes Box - Only show if notes exist */}
+                            {student.notes && student.notes.trim() !== '' && (
+                              <div className="mt-4 p-4 bg-yellow-50 border-2 border-yellow-200 rounded-lg">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                  </svg>
+                                  <h5 className="font-semibold text-yellow-900">Notes</h5>
+                                </div>
+                                <p className="text-sm text-yellow-800 whitespace-pre-wrap">{student.notes}</p>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

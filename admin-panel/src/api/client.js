@@ -32,6 +32,9 @@ export const createStudent = (data) =>
 export const getNextStudentId = (schoolName) =>
   api.get(`/students/next-id/${encodeURIComponent(schoolName)}`).then(res => res.data);
 
+export const searchStudentsWithNotes = (params) =>
+  api.get('/students/search/notes', { params }).then(res => res.data);
+
 // Schools
 export const getSchools = () => 
   api.get('/schools').then(res => res.data);

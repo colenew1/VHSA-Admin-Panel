@@ -799,7 +799,7 @@ router.put('/reporting', async (req, res, next) => {
 // Export reporting data as PDF
 router.post('/reporting/pdf', async (req, res, next) => {
   try {
-    const { reportData, school, startDate, endDate, year } = req.body;
+    const { reportData, school, startDate, endDate, year, notes } = req.body;
     
     if (!reportData || !reportData.summary || !reportData.byGrade) {
       return res.status(400).json({ error: 'Invalid reporting data structure' });
@@ -847,26 +847,31 @@ router.post('/reporting/pdf', async (req, res, next) => {
       grade: 75,
       total: 65,
       vision: 75,
+      glasses: 65,  // Moved after vision
       hearing: 75,
       acanthosis: 85,
-      scoliosis: 75,
-      glasses: 65  // Same width as totalStudents
+      scoliosis: 75
     };
     
-    // Calculate column positions
+    // Calculate column positions (reordered: Grade, Total, Vision, Glasses, Hearing, Acanthosis, Scoliosis)
     const colX = {
       grade: leftMargin,
       total: leftMargin + colWidths.grade,
       vision: leftMargin + colWidths.grade + colWidths.total,
-      hearing: leftMargin + colWidths.grade + colWidths.total + colWidths.vision,
-      acanthosis: leftMargin + colWidths.grade + colWidths.total + colWidths.vision + colWidths.hearing,
-      scoliosis: leftMargin + colWidths.grade + colWidths.total + colWidths.vision + colWidths.hearing + colWidths.acanthosis,
-      glasses: leftMargin + colWidths.grade + colWidths.total + colWidths.vision + colWidths.hearing + colWidths.acanthosis + colWidths.scoliosis
+      glasses: leftMargin + colWidths.grade + colWidths.total + colWidths.vision,
+      hearing: leftMargin + colWidths.grade + colWidths.total + colWidths.vision + colWidths.glasses,
+      acanthosis: leftMargin + colWidths.grade + colWidths.total + colWidths.vision + colWidths.glasses + colWidths.hearing,
+      scoliosis: leftMargin + colWidths.grade + colWidths.total + colWidths.vision + colWidths.glasses + colWidths.hearing + colWidths.acanthosis
     };
     
     const rowHeight = 22;  // Slightly smaller rows
     const headerRowHeight = 30;  // Taller header row for text to fit
     const cellPadding = 4;  // Slightly less padding
+    const screenedColWidth = 42;  // Wider for "Screened" text (was ~37.5)
+    const failedColWidth = 33;  // Slightly narrower for "Failed" text
+    // Acanthosis is wider (85), so its sub-columns need to be wider too
+    const acanthosisScreenedWidth = 50;  // Wider for Acanthosis
+    const acanthosisFailedWidth = 35;  // Wider for Acanthosis
     
     // Header row 1 - taller to fit text
     doc.fontSize(9)
@@ -882,6 +887,9 @@ router.post('/reporting/pdf', async (req, res, next) => {
     doc.rect(colX.vision, tableY, colWidths.vision, headerRowHeight).stroke();
     doc.text('Vision', colX.vision + cellPadding, tableY + cellPadding, { width: colWidths.vision - cellPadding * 2 });
     
+    doc.rect(colX.glasses, tableY, colWidths.glasses, headerRowHeight).stroke();
+    doc.text('Glasses/Contacts', colX.glasses + cellPadding, tableY + cellPadding, { width: colWidths.glasses - cellPadding * 2 });
+    
     doc.rect(colX.hearing, tableY, colWidths.hearing, headerRowHeight).stroke();
     doc.text('Hearing', colX.hearing + cellPadding, tableY + cellPadding, { width: colWidths.hearing - cellPadding * 2 });
     
@@ -890,9 +898,6 @@ router.post('/reporting/pdf', async (req, res, next) => {
     
     doc.rect(colX.scoliosis, tableY, colWidths.scoliosis, headerRowHeight).stroke();
     doc.text('Scoliosis', colX.scoliosis + cellPadding, tableY + cellPadding, { width: colWidths.scoliosis - cellPadding * 2 });
-    
-    doc.rect(colX.glasses, tableY, colWidths.glasses, headerRowHeight).stroke();
-    doc.text('Glasses/Contacts', colX.glasses + cellPadding, tableY + cellPadding, { width: colWidths.glasses - cellPadding * 2 });
     
     tableY += headerRowHeight;
     
@@ -903,27 +908,33 @@ router.post('/reporting/pdf', async (req, res, next) => {
     doc.rect(leftMargin, tableY, colWidths.grade, rowHeight).stroke();
     doc.rect(colX.total, tableY, colWidths.total, rowHeight).stroke();
     
-    doc.rect(colX.vision, tableY, colWidths.vision / 2, rowHeight).stroke();
-    doc.text('Screened', colX.vision + cellPadding, tableY + cellPadding, { width: colWidths.vision / 2 - cellPadding * 2 });
-    doc.rect(colX.vision + colWidths.vision / 2, tableY, colWidths.vision / 2, rowHeight).stroke();
-    doc.text('Failed', colX.vision + colWidths.vision / 2 + cellPadding, tableY + cellPadding, { width: colWidths.vision / 2 - cellPadding * 2 });
+    // Vision - wider Screened column (ensure no gap)
+    doc.rect(colX.vision, tableY, screenedColWidth, rowHeight).stroke();
+    doc.text('Screened', colX.vision + cellPadding, tableY + cellPadding, { width: screenedColWidth - cellPadding * 2 });
+    doc.rect(colX.vision + screenedColWidth, tableY, failedColWidth, rowHeight).stroke();
+    doc.text('Failed', colX.vision + screenedColWidth + cellPadding, tableY + cellPadding, { width: failedColWidth - cellPadding * 2 });
     
-    doc.rect(colX.hearing, tableY, colWidths.hearing / 2, rowHeight).stroke();
-    doc.text('Screened', colX.hearing + cellPadding, tableY + cellPadding, { width: colWidths.hearing / 2 - cellPadding * 2 });
-    doc.rect(colX.hearing + colWidths.hearing / 2, tableY, colWidths.hearing / 2, rowHeight).stroke();
-    doc.text('Failed', colX.hearing + colWidths.hearing / 2 + cellPadding, tableY + cellPadding, { width: colWidths.hearing / 2 - cellPadding * 2 });
-    
-    doc.rect(colX.acanthosis, tableY, colWidths.acanthosis / 2, rowHeight).stroke();
-    doc.text('Screened', colX.acanthosis + cellPadding, tableY + cellPadding, { width: colWidths.acanthosis / 2 - cellPadding * 2 });
-    doc.rect(colX.acanthosis + colWidths.acanthosis / 2, tableY, colWidths.acanthosis / 2, rowHeight).stroke();
-    doc.text('Failed', colX.acanthosis + colWidths.acanthosis / 2 + cellPadding, tableY + cellPadding, { width: colWidths.acanthosis / 2 - cellPadding * 2 });
-    
-    doc.rect(colX.scoliosis, tableY, colWidths.scoliosis / 2, rowHeight).stroke();
-    doc.text('Screened', colX.scoliosis + cellPadding, tableY + cellPadding, { width: colWidths.scoliosis / 2 - cellPadding * 2 });
-    doc.rect(colX.scoliosis + colWidths.scoliosis / 2, tableY, colWidths.scoliosis / 2, rowHeight).stroke();
-    doc.text('Failed', colX.scoliosis + colWidths.scoliosis / 2 + cellPadding, tableY + cellPadding, { width: colWidths.scoliosis / 2 - cellPadding * 2 });
-    
+    // Glasses/Contacts (no sub-columns) - ensure it starts right after Vision ends
+    const visionEndX = colX.vision + colWidths.vision;
     doc.rect(colX.glasses, tableY, colWidths.glasses, rowHeight).stroke();
+    
+    // Hearing - wider Screened column (ensure no gap)
+    doc.rect(colX.hearing, tableY, screenedColWidth, rowHeight).stroke();
+    doc.text('Screened', colX.hearing + cellPadding, tableY + cellPadding, { width: screenedColWidth - cellPadding * 2 });
+    doc.rect(colX.hearing + screenedColWidth, tableY, failedColWidth, rowHeight).stroke();
+    doc.text('Failed', colX.hearing + screenedColWidth + cellPadding, tableY + cellPadding, { width: failedColWidth - cellPadding * 2 });
+    
+    // Acanthosis - wider Screened column (ensure no gap, uses wider sub-columns)
+    doc.rect(colX.acanthosis, tableY, acanthosisScreenedWidth, rowHeight).stroke();
+    doc.text('Screened', colX.acanthosis + cellPadding, tableY + cellPadding, { width: acanthosisScreenedWidth - cellPadding * 2 });
+    doc.rect(colX.acanthosis + acanthosisScreenedWidth, tableY, acanthosisFailedWidth, rowHeight).stroke();
+    doc.text('Failed', colX.acanthosis + acanthosisScreenedWidth + cellPadding, tableY + cellPadding, { width: acanthosisFailedWidth - cellPadding * 2 });
+    
+    // Scoliosis - wider Screened column (ensure no gap)
+    doc.rect(colX.scoliosis, tableY, screenedColWidth, rowHeight).stroke();
+    doc.text('Screened', colX.scoliosis + cellPadding, tableY + cellPadding, { width: screenedColWidth - cellPadding * 2 });
+    doc.rect(colX.scoliosis + screenedColWidth, tableY, failedColWidth, rowHeight).stroke();
+    doc.text('Failed', colX.scoliosis + screenedColWidth + cellPadding, tableY + cellPadding, { width: failedColWidth - cellPadding * 2 });
     
     tableY += rowHeight;
     
@@ -960,51 +971,51 @@ router.post('/reporting/pdf', async (req, res, next) => {
     doc.fillColor('black');
     doc.text(totalStudentsText, colX.total + cellPadding, summaryRowY + 6, { width: colWidths.total - cellPadding * 2, align: 'left' });
     
-    // Vision columns
-    doc.rect(colX.vision, summaryRowY, colWidths.vision / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    // Vision columns - wider Screened
+    doc.rect(colX.vision, summaryRowY, screenedColWidth, rowHeight).fillAndStroke('#E3F2FD', 'black');
     const visionScreenedText = String(reportData.summary?.totalVision ?? 0);
     doc.fillColor('black');
-    doc.text(visionScreenedText, colX.vision + cellPadding, summaryRowY + 6, { width: colWidths.vision / 2 - cellPadding * 2, align: 'left' });
-    doc.rect(colX.vision + colWidths.vision / 2, summaryRowY, colWidths.vision / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    doc.text(visionScreenedText, colX.vision + cellPadding, summaryRowY + 6, { width: screenedColWidth - cellPadding * 2, align: 'left' });
+    doc.rect(colX.vision + screenedColWidth, summaryRowY, failedColWidth, rowHeight).fillAndStroke('#E3F2FD', 'black');
     const visionFailedText = String(totalVisionFailed);
     doc.fillColor('black');
-    doc.text(visionFailedText, colX.vision + colWidths.vision / 2 + cellPadding, summaryRowY + 6, { width: colWidths.vision / 2 - cellPadding * 2, align: 'left' });
+    doc.text(visionFailedText, colX.vision + screenedColWidth + cellPadding, summaryRowY + 6, { width: failedColWidth - cellPadding * 2, align: 'left' });
     
-    // Hearing columns
-    doc.rect(colX.hearing, summaryRowY, colWidths.hearing / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
-    const hearingScreenedText = String(reportData.summary?.totalHearing ?? 0);
-    doc.fillColor('black');
-    doc.text(hearingScreenedText, colX.hearing + cellPadding, summaryRowY + 6, { width: colWidths.hearing / 2 - cellPadding * 2, align: 'left' });
-    doc.rect(colX.hearing + colWidths.hearing / 2, summaryRowY, colWidths.hearing / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
-    const hearingFailedText = String(totalHearingFailed);
-    doc.fillColor('black');
-    doc.text(hearingFailedText, colX.hearing + colWidths.hearing / 2 + cellPadding, summaryRowY + 6, { width: colWidths.hearing / 2 - cellPadding * 2, align: 'left' });
-    
-    // Acanthosis columns
-    doc.rect(colX.acanthosis, summaryRowY, colWidths.acanthosis / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
-    const acanthosisScreenedText = String(reportData.summary?.totalAcanthosis ?? 0);
-    doc.fillColor('black');
-    doc.text(acanthosisScreenedText, colX.acanthosis + cellPadding, summaryRowY + 6, { width: colWidths.acanthosis / 2 - cellPadding * 2, align: 'left' });
-    doc.rect(colX.acanthosis + colWidths.acanthosis / 2, summaryRowY, colWidths.acanthosis / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
-    const acanthosisFailedText = String(totalAcanthosisFailed);
-    doc.fillColor('black');
-    doc.text(acanthosisFailedText, colX.acanthosis + colWidths.acanthosis / 2 + cellPadding, summaryRowY + 6, { width: colWidths.acanthosis / 2 - cellPadding * 2, align: 'left' });
-    
-    // Scoliosis columns
-    doc.rect(colX.scoliosis, summaryRowY, colWidths.scoliosis / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
-    const scoliosisScreenedText = String(reportData.summary?.totalScoliosis ?? 0);
-    doc.fillColor('black');
-    doc.text(scoliosisScreenedText, colX.scoliosis + cellPadding, summaryRowY + 6, { width: colWidths.scoliosis / 2 - cellPadding * 2, align: 'left' });
-    doc.rect(colX.scoliosis + colWidths.scoliosis / 2, summaryRowY, colWidths.scoliosis / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
-    const scoliosisFailedText = String(totalScoliosisFailed);
-    doc.fillColor('black');
-    doc.text(scoliosisFailedText, colX.scoliosis + colWidths.scoliosis / 2 + cellPadding, summaryRowY + 6, { width: colWidths.scoliosis / 2 - cellPadding * 2, align: 'left' });
-    
-    // Glasses/Contacts column
+    // Glasses/Contacts column (moved after Vision)
     doc.rect(colX.glasses, summaryRowY, colWidths.glasses, rowHeight).fillAndStroke('#E3F2FD', 'black');
     const glassesText = String(totalGlassesContacts);
     doc.fillColor('black');
     doc.text(glassesText, colX.glasses + cellPadding, summaryRowY + 6, { width: colWidths.glasses - cellPadding * 2, align: 'left' });
+    
+    // Hearing columns - wider Screened
+    doc.rect(colX.hearing, summaryRowY, screenedColWidth, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const hearingScreenedText = String(reportData.summary?.totalHearing ?? 0);
+    doc.fillColor('black');
+    doc.text(hearingScreenedText, colX.hearing + cellPadding, summaryRowY + 6, { width: screenedColWidth - cellPadding * 2, align: 'left' });
+    doc.rect(colX.hearing + screenedColWidth, summaryRowY, failedColWidth, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const hearingFailedText = String(totalHearingFailed);
+    doc.fillColor('black');
+    doc.text(hearingFailedText, colX.hearing + screenedColWidth + cellPadding, summaryRowY + 6, { width: failedColWidth - cellPadding * 2, align: 'left' });
+    
+    // Acanthosis columns - wider Screened (uses wider sub-columns)
+    doc.rect(colX.acanthosis, summaryRowY, acanthosisScreenedWidth, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const acanthosisScreenedText = String(reportData.summary?.totalAcanthosis ?? 0);
+    doc.fillColor('black');
+    doc.text(acanthosisScreenedText, colX.acanthosis + cellPadding, summaryRowY + 6, { width: acanthosisScreenedWidth - cellPadding * 2, align: 'left' });
+    doc.rect(colX.acanthosis + acanthosisScreenedWidth, summaryRowY, acanthosisFailedWidth, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const acanthosisFailedText = String(totalAcanthosisFailed);
+    doc.fillColor('black');
+    doc.text(acanthosisFailedText, colX.acanthosis + acanthosisScreenedWidth + cellPadding, summaryRowY + 6, { width: acanthosisFailedWidth - cellPadding * 2, align: 'left' });
+    
+    // Scoliosis columns - wider Screened
+    doc.rect(colX.scoliosis, summaryRowY, screenedColWidth, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const scoliosisScreenedText = String(reportData.summary?.totalScoliosis ?? 0);
+    doc.fillColor('black');
+    doc.text(scoliosisScreenedText, colX.scoliosis + cellPadding, summaryRowY + 6, { width: screenedColWidth - cellPadding * 2, align: 'left' });
+    doc.rect(colX.scoliosis + screenedColWidth, summaryRowY, failedColWidth, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const scoliosisFailedText = String(totalScoliosisFailed);
+    doc.fillColor('black');
+    doc.text(scoliosisFailedText, colX.scoliosis + screenedColWidth + cellPadding, summaryRowY + 6, { width: failedColWidth - cellPadding * 2, align: 'left' });
     
     tableY += rowHeight;
     
@@ -1027,30 +1038,74 @@ router.post('/reporting/pdf', async (req, res, next) => {
       doc.rect(colX.total, tableY, colWidths.total, rowHeight).stroke();
       doc.text(String(gradeData.totalStudents ?? 0), colX.total + cellPadding, tableY + 6, { width: colWidths.total - cellPadding * 2, align: 'left' });
       
-      doc.rect(colX.vision, tableY, colWidths.vision / 2, rowHeight).stroke();
-      doc.text(String(gradeData.vision?.screened ?? 0), colX.vision + cellPadding, tableY + 6, { width: colWidths.vision / 2 - cellPadding * 2, align: 'left' });
-      doc.rect(colX.vision + colWidths.vision / 2, tableY, colWidths.vision / 2, rowHeight).stroke();
-      doc.text(String(gradeData.vision?.failed ?? 0), colX.vision + colWidths.vision / 2 + cellPadding, tableY + 6, { width: colWidths.vision / 2 - cellPadding * 2, align: 'left' });
+      // Vision - wider Screened column
+      doc.rect(colX.vision, tableY, screenedColWidth, rowHeight).stroke();
+      doc.text(String(gradeData.vision?.screened ?? 0), colX.vision + cellPadding, tableY + 6, { width: screenedColWidth - cellPadding * 2, align: 'left' });
+      doc.rect(colX.vision + screenedColWidth, tableY, failedColWidth, rowHeight).stroke();
+      doc.text(String(gradeData.vision?.failed ?? 0), colX.vision + screenedColWidth + cellPadding, tableY + 6, { width: failedColWidth - cellPadding * 2, align: 'left' });
       
-      doc.rect(colX.hearing, tableY, colWidths.hearing / 2, rowHeight).stroke();
-      doc.text(String(gradeData.hearing?.screened ?? 0), colX.hearing + cellPadding, tableY + 6, { width: colWidths.hearing / 2 - cellPadding * 2, align: 'left' });
-      doc.rect(colX.hearing + colWidths.hearing / 2, tableY, colWidths.hearing / 2, rowHeight).stroke();
-      doc.text(String(gradeData.hearing?.failed ?? 0), colX.hearing + colWidths.hearing / 2 + cellPadding, tableY + 6, { width: colWidths.hearing / 2 - cellPadding * 2, align: 'left' });
-      
-      doc.rect(colX.acanthosis, tableY, colWidths.acanthosis / 2, rowHeight).stroke();
-      doc.text(String(gradeData.acanthosis?.screened ?? 0), colX.acanthosis + cellPadding, tableY + 6, { width: colWidths.acanthosis / 2 - cellPadding * 2, align: 'left' });
-      doc.rect(colX.acanthosis + colWidths.acanthosis / 2, tableY, colWidths.acanthosis / 2, rowHeight).stroke();
-      doc.text(String(gradeData.acanthosis?.failed ?? 0), colX.acanthosis + colWidths.acanthosis / 2 + cellPadding, tableY + 6, { width: colWidths.acanthosis / 2 - cellPadding * 2, align: 'left' });
-      
-      doc.rect(colX.scoliosis, tableY, colWidths.scoliosis / 2, rowHeight).stroke();
-      doc.text(String(gradeData.scoliosis?.screened ?? 0), colX.scoliosis + cellPadding, tableY + 6, { width: colWidths.scoliosis / 2 - cellPadding * 2, align: 'left' });
-      doc.rect(colX.scoliosis + colWidths.scoliosis / 2, tableY, colWidths.scoliosis / 2, rowHeight).stroke();
-      doc.text(String(gradeData.scoliosis?.failed ?? 0), colX.scoliosis + colWidths.scoliosis / 2 + cellPadding, tableY + 6, { width: colWidths.scoliosis / 2 - cellPadding * 2, align: 'left' });
-      
+      // Glasses/Contacts (moved after Vision)
       doc.rect(colX.glasses, tableY, colWidths.glasses, rowHeight).stroke();
       doc.text(String(gradeData.glassesContacts ?? 0), colX.glasses + cellPadding, tableY + 6, { width: colWidths.glasses - cellPadding * 2, align: 'left' });
       
+      // Hearing - wider Screened column
+      doc.rect(colX.hearing, tableY, screenedColWidth, rowHeight).stroke();
+      doc.text(String(gradeData.hearing?.screened ?? 0), colX.hearing + cellPadding, tableY + 6, { width: screenedColWidth - cellPadding * 2, align: 'left' });
+      doc.rect(colX.hearing + screenedColWidth, tableY, failedColWidth, rowHeight).stroke();
+      doc.text(String(gradeData.hearing?.failed ?? 0), colX.hearing + screenedColWidth + cellPadding, tableY + 6, { width: failedColWidth - cellPadding * 2, align: 'left' });
+      
+      // Acanthosis - wider Screened column (uses wider sub-columns)
+      doc.rect(colX.acanthosis, tableY, acanthosisScreenedWidth, rowHeight).stroke();
+      doc.text(String(gradeData.acanthosis?.screened ?? 0), colX.acanthosis + cellPadding, tableY + 6, { width: acanthosisScreenedWidth - cellPadding * 2, align: 'left' });
+      doc.rect(colX.acanthosis + acanthosisScreenedWidth, tableY, acanthosisFailedWidth, rowHeight).stroke();
+      doc.text(String(gradeData.acanthosis?.failed ?? 0), colX.acanthosis + acanthosisScreenedWidth + cellPadding, tableY + 6, { width: acanthosisFailedWidth - cellPadding * 2, align: 'left' });
+      
+      // Scoliosis - wider Screened column
+      doc.rect(colX.scoliosis, tableY, screenedColWidth, rowHeight).stroke();
+      doc.text(String(gradeData.scoliosis?.screened ?? 0), colX.scoliosis + cellPadding, tableY + 6, { width: screenedColWidth - cellPadding * 2, align: 'left' });
+      doc.rect(colX.scoliosis + screenedColWidth, tableY, failedColWidth, rowHeight).stroke();
+      doc.text(String(gradeData.scoliosis?.failed ?? 0), colX.scoliosis + screenedColWidth + cellPadding, tableY + 6, { width: failedColWidth - cellPadding * 2, align: 'left' });
+      
       tableY += rowHeight;
+    }
+    
+    // Add notes section at the bottom of the first page
+    if (notes && notes.trim()) {
+      // Calculate available space on first page
+      const pageHeight = 792; // Letter size height in points
+      const bottomMargin = 50;
+      const availableSpace = pageHeight - bottomMargin - tableY;
+      
+      // If not enough space, add new page
+      if (availableSpace < 120) {
+        doc.addPage();
+        tableY = 50;
+      } else {
+        tableY += 20; // Add some spacing after table
+      }
+      
+      // Notes section header
+      doc.fontSize(12)
+         .font('Helvetica-Bold')
+         .fillColor('black')
+         .text('Notes', leftMargin, tableY, { align: 'left' });
+      
+      tableY += 20;
+      
+      // Notes content - use remaining space on page
+      const notesWidth = 500;
+      const notesMaxHeight = pageHeight - bottomMargin - tableY - 20;
+      
+      doc.fontSize(10)
+         .font('Helvetica')
+         .fillColor('black')
+         .text(notes, leftMargin, tableY, {
+           width: notesWidth,
+           align: 'left',
+           lineGap: 4,
+           height: notesMaxHeight,
+           ellipsis: true
+         });
     }
     
     // Finalize PDF

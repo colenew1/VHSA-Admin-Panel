@@ -30,11 +30,11 @@ export function hasFailedTest(student) {
 }
 
 /**
- * Determine the status of a student's screening row
+ * Determine the computed status of a student's screening row (without override)
  * @param {Object} student - Student screening data
  * @returns {string} - 'not_started', 'completed', 'incomplete', or 'absent'
  */
-export function getRowStatus(student) {
+export function getComputedStatus(student) {
   // Check if not started (no screening record exists)
   if (!student.initial_screening_date) {
     return 'not_started';
@@ -58,6 +58,21 @@ export function getRowStatus(student) {
 
   // Otherwise, incomplete
   return 'incomplete';
+}
+
+/**
+ * Determine the status of a student's screening row (with override support)
+ * @param {Object} student - Student screening data
+ * @returns {string} - 'not_started', 'completed', 'incomplete', or 'absent'
+ */
+export function getRowStatus(student) {
+  // If status_override is set, use it (but it can still be changed/cleared)
+  if (student.status_override && ['not_started', 'completed', 'incomplete', 'absent'].includes(student.status_override)) {
+    return student.status_override;
+  }
+
+  // Otherwise, use computed status
+  return getComputedStatus(student);
 }
 
 /**
