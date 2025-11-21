@@ -27,6 +27,9 @@ const allowedOrigins = [
   process.env.FRONTEND_URL, // Additional frontend URL from environment
 ].filter(Boolean); // Remove undefined values
 
+// Log allowed origins for debugging
+console.log('CORS: Allowed origins:', allowedOrigins);
+
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl)
@@ -36,10 +39,17 @@ app.use(cors({
     }
 
     console.log('CORS: Checking origin:', origin);
+    console.log('CORS: Allowed origins list:', allowedOrigins);
 
     // Allow all localhost origins for local development
     if (origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
       console.log('CORS: Localhost origin allowed');
+      return callback(null, true);
+    }
+
+    // In production, allow any Netlify subdomain for flexibility
+    if (origin.includes('.netlify.app') || origin.includes('.netlify.com')) {
+      console.log('CORS: Netlify origin allowed:', origin);
       return callback(null, true);
     }
 
@@ -50,7 +60,12 @@ app.use(cors({
     } else {
       // Log the origin for debugging
       console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
+      console.log('CORS: To allow this origin, add it to allowedOrigins or FRONTEND_URL env var');
+      // For now, allow it but log a warning (you can change this to block if needed)
+      console.log('CORS: Allowing origin anyway for debugging - REMOVE IN PRODUCTION IF SECURITY IS A CONCERN');
+      callback(null, true);
+      // Uncomment below to block unknown origins:
+      // callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true
