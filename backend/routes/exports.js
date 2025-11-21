@@ -362,7 +362,8 @@ router.get('/stickers/preview', async (req, res, next) => {
           student_name: studentName,
           grade: student.grade,
           tests_needed: testsNeeded,
-          status: studentStatus
+          status: studentStatus,
+          student_status: student.status || 'Returning' // "New" or "Returning"
         };
       })
       .filter(item => statusFilters.includes(item.status));
@@ -445,7 +446,8 @@ router.post('/stickers', async (req, res, next) => {
             student_name: studentName,
             grade: student.grade,
             tests_needed: testsNeeded,
-            status: studentStatus
+            status: studentStatus,
+            student_status: student.status || 'Returning' // "New" or "Returning"
           };
         })
         .filter(item => statusFilters.includes(item.status));
@@ -512,7 +514,7 @@ router.post('/stickers', async (req, res, next) => {
       const contentY = y + padding;
       const contentWidth = labelWidth - (padding * 2);
       
-      // Student ID (bold, larger)
+      // Student ID (bold, larger) - left aligned
       doc.fontSize(12)
          .font('Helvetica-Bold')
          .text(label.student_id || '', contentX, contentY, {
@@ -520,8 +522,8 @@ router.post('/stickers', async (req, res, next) => {
            align: 'left'
          });
       
-      // Student Name (medium)
-      const nameY = contentY + 16;
+      // Student Name (medium) - left aligned
+      const nameY = contentY + 14;
       doc.fontSize(9)
          .font('Helvetica')
          .text(label.student_name || '', contentX, nameY, {
@@ -529,24 +531,53 @@ router.post('/stickers', async (req, res, next) => {
            align: 'left'
          });
       
-      // Grade
-      const gradeY = nameY + 12;
-      doc.fontSize(8)
-         .font('Helvetica')
-         .text(`Grade: ${label.grade || ''}`, contentX, gradeY, {
-           width: contentWidth,
-           align: 'left'
-         });
+      // Grade, Status (New/Returning), and Tests Needed
+      const gradeY = nameY + 11;
       
-      // Tests Needed (if any) - new line, centered, considerably bigger
-      if (label.tests_needed) {
-        const testsY = gradeY + 16; // More space before tests
+      // Set up for grade and status (same font size)
+      doc.fontSize(8)
+         .font('Helvetica');
+      
+      const gradeText = `Grade: ${label.grade || ''}`;
+      const studentStatus = label.student_status === 'New' ? 'New' : 'Returning';
+      const statusText = studentStatus;
+      
+      // Measure text widths with current font
+      const gradeWidth = doc.widthOfString(gradeText);
+      const statusSpacing = 10;
+      const statusWidth = doc.widthOfString(statusText);
+      
+      // Draw grade text
+      doc.text(gradeText, contentX, gradeY, {
+        width: contentWidth,
+        align: 'left'
+      });
+      
+      // Draw status (New/Returning) after grade - same baseline
+      doc.text(statusText, contentX + gradeWidth + statusSpacing, gradeY, {
+        width: contentWidth - gradeWidth - statusSpacing,
+        align: 'left'
+      });
+      
+      // If tests_needed exists, put it more to the right and slightly higher for stand-alone appearance
+      if (label.tests_needed && label.tests_needed.trim()) {
+        // Switch to larger bold font for tests_needed
         doc.fontSize(16)
-           .font('Helvetica-Bold')
-           .text(label.tests_needed, contentX, testsY, {
-             width: contentWidth,
-             align: 'center'
-           });
+           .font('Helvetica-Bold');
+        
+        // Even more spacing to make it stand-alone (further to the right)
+        const testsSpacing = 30; // Increased spacing even more
+        // Calculate the X position for tests_needed (after grade + spacing + status + more spacing)
+        const testsX = contentX + gradeWidth + statusSpacing + statusWidth + testsSpacing;
+        
+        // Higher Y position (move up by 4 points) to make it stand out more
+        const testsY = gradeY - 4;
+        
+        // Draw tests_needed with more spacing and higher position
+        doc.text(label.tests_needed, testsX, testsY, {
+          width: contentWidth - (gradeWidth + statusSpacing + statusWidth + testsSpacing),
+          align: 'left'
+        });
       }
       
       // Move to next label position
@@ -759,6 +790,271 @@ router.put('/reporting', async (req, res, next) => {
       summary,
       byGrade
     });
+    
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Export reporting data as PDF
+router.post('/reporting/pdf', async (req, res, next) => {
+  try {
+    const { reportData, school, startDate, endDate, year } = req.body;
+    
+    if (!reportData || !reportData.summary || !reportData.byGrade) {
+      return res.status(400).json({ error: 'Invalid reporting data structure' });
+    }
+    
+    const doc = new PDFDocument({
+      size: 'LETTER',
+      margins: { top: 50, bottom: 50, left: 50, right: 50 }
+    });
+    
+    // Set response headers for PDF
+    res.setHeader('Content-Type', 'application/pdf');
+    const schoolName = school === 'all' ? 'All-Schools' : school.replace(/\s+/g, '-');
+    res.setHeader('Content-Disposition', `attachment; filename="reporting-${schoolName}.pdf"`);
+    
+    // Pipe PDF to response
+    doc.pipe(res);
+    
+    // Title
+    doc.fontSize(20)
+       .font('Helvetica-Bold')
+       .text('Screening Reporting Statistics', 50, 50, { align: 'center' });
+    
+    // School and date info
+    doc.fontSize(12)
+       .font('Helvetica')
+       .text(`School: ${school === 'all' ? 'All Schools' : school}`, 50, 85, { align: 'left' });
+    
+    let infoY = 105;
+    if (year) {
+      doc.text(`Year: ${year}`, 50, infoY, { align: 'left' });
+      infoY += 15;
+    }
+    if (startDate || endDate) {
+      const dateRange = `${startDate || 'N/A'} to ${endDate || 'N/A'}`;
+      doc.text(`Date Range: ${dateRange}`, 50, infoY, { align: 'left' });
+      infoY += 15;
+    }
+    
+    // Table starting position
+    let tableY = infoY + 20;
+    const tableTop = tableY;
+    const leftMargin = 50;
+    const colWidths = {
+      grade: 75,
+      total: 65,
+      vision: 75,
+      hearing: 75,
+      acanthosis: 85,
+      scoliosis: 75,
+      glasses: 65  // Same width as totalStudents
+    };
+    
+    // Calculate column positions
+    const colX = {
+      grade: leftMargin,
+      total: leftMargin + colWidths.grade,
+      vision: leftMargin + colWidths.grade + colWidths.total,
+      hearing: leftMargin + colWidths.grade + colWidths.total + colWidths.vision,
+      acanthosis: leftMargin + colWidths.grade + colWidths.total + colWidths.vision + colWidths.hearing,
+      scoliosis: leftMargin + colWidths.grade + colWidths.total + colWidths.vision + colWidths.hearing + colWidths.acanthosis,
+      glasses: leftMargin + colWidths.grade + colWidths.total + colWidths.vision + colWidths.hearing + colWidths.acanthosis + colWidths.scoliosis
+    };
+    
+    const rowHeight = 22;  // Slightly smaller rows
+    const headerRowHeight = 30;  // Taller header row for text to fit
+    const cellPadding = 4;  // Slightly less padding
+    
+    // Header row 1 - taller to fit text
+    doc.fontSize(9)
+       .font('Helvetica-Bold')
+       .fillColor('black');
+    
+    doc.rect(leftMargin, tableY, colWidths.grade, headerRowHeight).stroke();
+    doc.text('Grade', colX.grade + cellPadding, tableY + cellPadding, { width: colWidths.grade - cellPadding * 2 });
+    
+    doc.rect(colX.total, tableY, colWidths.total, headerRowHeight).stroke();
+    doc.text('Total Students', colX.total + cellPadding, tableY + cellPadding, { width: colWidths.total - cellPadding * 2 });
+    
+    doc.rect(colX.vision, tableY, colWidths.vision, headerRowHeight).stroke();
+    doc.text('Vision', colX.vision + cellPadding, tableY + cellPadding, { width: colWidths.vision - cellPadding * 2 });
+    
+    doc.rect(colX.hearing, tableY, colWidths.hearing, headerRowHeight).stroke();
+    doc.text('Hearing', colX.hearing + cellPadding, tableY + cellPadding, { width: colWidths.hearing - cellPadding * 2 });
+    
+    doc.rect(colX.acanthosis, tableY, colWidths.acanthosis, headerRowHeight).stroke();
+    doc.text('Acanthosis', colX.acanthosis + cellPadding, tableY + cellPadding, { width: colWidths.acanthosis - cellPadding * 2 });
+    
+    doc.rect(colX.scoliosis, tableY, colWidths.scoliosis, headerRowHeight).stroke();
+    doc.text('Scoliosis', colX.scoliosis + cellPadding, tableY + cellPadding, { width: colWidths.scoliosis - cellPadding * 2 });
+    
+    doc.rect(colX.glasses, tableY, colWidths.glasses, headerRowHeight).stroke();
+    doc.text('Glasses/Contacts', colX.glasses + cellPadding, tableY + cellPadding, { width: colWidths.glasses - cellPadding * 2 });
+    
+    tableY += headerRowHeight;
+    
+    // Header row 2 (subheaders for Screened/Failed)
+    doc.fontSize(7)
+       .font('Helvetica');
+    
+    doc.rect(leftMargin, tableY, colWidths.grade, rowHeight).stroke();
+    doc.rect(colX.total, tableY, colWidths.total, rowHeight).stroke();
+    
+    doc.rect(colX.vision, tableY, colWidths.vision / 2, rowHeight).stroke();
+    doc.text('Screened', colX.vision + cellPadding, tableY + cellPadding, { width: colWidths.vision / 2 - cellPadding * 2 });
+    doc.rect(colX.vision + colWidths.vision / 2, tableY, colWidths.vision / 2, rowHeight).stroke();
+    doc.text('Failed', colX.vision + colWidths.vision / 2 + cellPadding, tableY + cellPadding, { width: colWidths.vision / 2 - cellPadding * 2 });
+    
+    doc.rect(colX.hearing, tableY, colWidths.hearing / 2, rowHeight).stroke();
+    doc.text('Screened', colX.hearing + cellPadding, tableY + cellPadding, { width: colWidths.hearing / 2 - cellPadding * 2 });
+    doc.rect(colX.hearing + colWidths.hearing / 2, tableY, colWidths.hearing / 2, rowHeight).stroke();
+    doc.text('Failed', colX.hearing + colWidths.hearing / 2 + cellPadding, tableY + cellPadding, { width: colWidths.hearing / 2 - cellPadding * 2 });
+    
+    doc.rect(colX.acanthosis, tableY, colWidths.acanthosis / 2, rowHeight).stroke();
+    doc.text('Screened', colX.acanthosis + cellPadding, tableY + cellPadding, { width: colWidths.acanthosis / 2 - cellPadding * 2 });
+    doc.rect(colX.acanthosis + colWidths.acanthosis / 2, tableY, colWidths.acanthosis / 2, rowHeight).stroke();
+    doc.text('Failed', colX.acanthosis + colWidths.acanthosis / 2 + cellPadding, tableY + cellPadding, { width: colWidths.acanthosis / 2 - cellPadding * 2 });
+    
+    doc.rect(colX.scoliosis, tableY, colWidths.scoliosis / 2, rowHeight).stroke();
+    doc.text('Screened', colX.scoliosis + cellPadding, tableY + cellPadding, { width: colWidths.scoliosis / 2 - cellPadding * 2 });
+    doc.rect(colX.scoliosis + colWidths.scoliosis / 2, tableY, colWidths.scoliosis / 2, rowHeight).stroke();
+    doc.text('Failed', colX.scoliosis + colWidths.scoliosis / 2 + cellPadding, tableY + cellPadding, { width: colWidths.scoliosis / 2 - cellPadding * 2 });
+    
+    doc.rect(colX.glasses, tableY, colWidths.glasses, rowHeight).stroke();
+    
+    tableY += rowHeight;
+    
+    // Calculate total failed counts from all grades
+    let totalVisionFailed = 0;
+    let totalHearingFailed = 0;
+    let totalAcanthosisFailed = 0;
+    let totalScoliosisFailed = 0;
+    let totalGlassesContacts = 0;
+    
+    reportData.byGrade.forEach(gradeData => {
+      totalVisionFailed += gradeData.vision?.failed || 0;
+      totalHearingFailed += gradeData.hearing?.failed || 0;
+      totalAcanthosisFailed += gradeData.acanthosis?.failed || 0;
+      totalScoliosisFailed += gradeData.scoliosis?.failed || 0;
+      totalGlassesContacts += gradeData.glassesContacts || 0;
+    });
+    
+    // Summary row (Total)
+    doc.fontSize(9)
+       .font('Helvetica-Bold')
+       .fillColor('black');
+    
+    const summaryRowY = tableY;
+    
+    // Grade column - say "Total"
+    doc.rect(leftMargin, summaryRowY, colWidths.grade, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    doc.fillColor('black');
+    doc.text('Total', colX.grade + cellPadding, summaryRowY + 6, { width: colWidths.grade - cellPadding * 2, align: 'left' });
+    
+    // Total Students column
+    doc.rect(colX.total, summaryRowY, colWidths.total, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const totalStudentsText = String(reportData.summary?.totalStudents ?? 0);
+    doc.fillColor('black');
+    doc.text(totalStudentsText, colX.total + cellPadding, summaryRowY + 6, { width: colWidths.total - cellPadding * 2, align: 'left' });
+    
+    // Vision columns
+    doc.rect(colX.vision, summaryRowY, colWidths.vision / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const visionScreenedText = String(reportData.summary?.totalVision ?? 0);
+    doc.fillColor('black');
+    doc.text(visionScreenedText, colX.vision + cellPadding, summaryRowY + 6, { width: colWidths.vision / 2 - cellPadding * 2, align: 'left' });
+    doc.rect(colX.vision + colWidths.vision / 2, summaryRowY, colWidths.vision / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const visionFailedText = String(totalVisionFailed);
+    doc.fillColor('black');
+    doc.text(visionFailedText, colX.vision + colWidths.vision / 2 + cellPadding, summaryRowY + 6, { width: colWidths.vision / 2 - cellPadding * 2, align: 'left' });
+    
+    // Hearing columns
+    doc.rect(colX.hearing, summaryRowY, colWidths.hearing / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const hearingScreenedText = String(reportData.summary?.totalHearing ?? 0);
+    doc.fillColor('black');
+    doc.text(hearingScreenedText, colX.hearing + cellPadding, summaryRowY + 6, { width: colWidths.hearing / 2 - cellPadding * 2, align: 'left' });
+    doc.rect(colX.hearing + colWidths.hearing / 2, summaryRowY, colWidths.hearing / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const hearingFailedText = String(totalHearingFailed);
+    doc.fillColor('black');
+    doc.text(hearingFailedText, colX.hearing + colWidths.hearing / 2 + cellPadding, summaryRowY + 6, { width: colWidths.hearing / 2 - cellPadding * 2, align: 'left' });
+    
+    // Acanthosis columns
+    doc.rect(colX.acanthosis, summaryRowY, colWidths.acanthosis / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const acanthosisScreenedText = String(reportData.summary?.totalAcanthosis ?? 0);
+    doc.fillColor('black');
+    doc.text(acanthosisScreenedText, colX.acanthosis + cellPadding, summaryRowY + 6, { width: colWidths.acanthosis / 2 - cellPadding * 2, align: 'left' });
+    doc.rect(colX.acanthosis + colWidths.acanthosis / 2, summaryRowY, colWidths.acanthosis / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const acanthosisFailedText = String(totalAcanthosisFailed);
+    doc.fillColor('black');
+    doc.text(acanthosisFailedText, colX.acanthosis + colWidths.acanthosis / 2 + cellPadding, summaryRowY + 6, { width: colWidths.acanthosis / 2 - cellPadding * 2, align: 'left' });
+    
+    // Scoliosis columns
+    doc.rect(colX.scoliosis, summaryRowY, colWidths.scoliosis / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const scoliosisScreenedText = String(reportData.summary?.totalScoliosis ?? 0);
+    doc.fillColor('black');
+    doc.text(scoliosisScreenedText, colX.scoliosis + cellPadding, summaryRowY + 6, { width: colWidths.scoliosis / 2 - cellPadding * 2, align: 'left' });
+    doc.rect(colX.scoliosis + colWidths.scoliosis / 2, summaryRowY, colWidths.scoliosis / 2, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const scoliosisFailedText = String(totalScoliosisFailed);
+    doc.fillColor('black');
+    doc.text(scoliosisFailedText, colX.scoliosis + colWidths.scoliosis / 2 + cellPadding, summaryRowY + 6, { width: colWidths.scoliosis / 2 - cellPadding * 2, align: 'left' });
+    
+    // Glasses/Contacts column
+    doc.rect(colX.glasses, summaryRowY, colWidths.glasses, rowHeight).fillAndStroke('#E3F2FD', 'black');
+    const glassesText = String(totalGlassesContacts);
+    doc.fillColor('black');
+    doc.text(glassesText, colX.glasses + cellPadding, summaryRowY + 6, { width: colWidths.glasses - cellPadding * 2, align: 'left' });
+    
+    tableY += rowHeight;
+    
+    // Grade rows
+    doc.fontSize(8)
+       .font('Helvetica')
+       .fillColor('black');
+    
+    for (const gradeData of reportData.byGrade) {
+      // Check if we need a new page
+      if (tableY + rowHeight > 750) {
+        doc.addPage();
+        tableY = 50;
+      }
+      
+      doc.fillColor('black');
+      doc.rect(leftMargin, tableY, colWidths.grade, rowHeight).stroke();
+      doc.text(gradeData.grade || '', colX.grade + cellPadding, tableY + 6, { width: colWidths.grade - cellPadding * 2, align: 'left' });
+      
+      doc.rect(colX.total, tableY, colWidths.total, rowHeight).stroke();
+      doc.text(String(gradeData.totalStudents ?? 0), colX.total + cellPadding, tableY + 6, { width: colWidths.total - cellPadding * 2, align: 'left' });
+      
+      doc.rect(colX.vision, tableY, colWidths.vision / 2, rowHeight).stroke();
+      doc.text(String(gradeData.vision?.screened ?? 0), colX.vision + cellPadding, tableY + 6, { width: colWidths.vision / 2 - cellPadding * 2, align: 'left' });
+      doc.rect(colX.vision + colWidths.vision / 2, tableY, colWidths.vision / 2, rowHeight).stroke();
+      doc.text(String(gradeData.vision?.failed ?? 0), colX.vision + colWidths.vision / 2 + cellPadding, tableY + 6, { width: colWidths.vision / 2 - cellPadding * 2, align: 'left' });
+      
+      doc.rect(colX.hearing, tableY, colWidths.hearing / 2, rowHeight).stroke();
+      doc.text(String(gradeData.hearing?.screened ?? 0), colX.hearing + cellPadding, tableY + 6, { width: colWidths.hearing / 2 - cellPadding * 2, align: 'left' });
+      doc.rect(colX.hearing + colWidths.hearing / 2, tableY, colWidths.hearing / 2, rowHeight).stroke();
+      doc.text(String(gradeData.hearing?.failed ?? 0), colX.hearing + colWidths.hearing / 2 + cellPadding, tableY + 6, { width: colWidths.hearing / 2 - cellPadding * 2, align: 'left' });
+      
+      doc.rect(colX.acanthosis, tableY, colWidths.acanthosis / 2, rowHeight).stroke();
+      doc.text(String(gradeData.acanthosis?.screened ?? 0), colX.acanthosis + cellPadding, tableY + 6, { width: colWidths.acanthosis / 2 - cellPadding * 2, align: 'left' });
+      doc.rect(colX.acanthosis + colWidths.acanthosis / 2, tableY, colWidths.acanthosis / 2, rowHeight).stroke();
+      doc.text(String(gradeData.acanthosis?.failed ?? 0), colX.acanthosis + colWidths.acanthosis / 2 + cellPadding, tableY + 6, { width: colWidths.acanthosis / 2 - cellPadding * 2, align: 'left' });
+      
+      doc.rect(colX.scoliosis, tableY, colWidths.scoliosis / 2, rowHeight).stroke();
+      doc.text(String(gradeData.scoliosis?.screened ?? 0), colX.scoliosis + cellPadding, tableY + 6, { width: colWidths.scoliosis / 2 - cellPadding * 2, align: 'left' });
+      doc.rect(colX.scoliosis + colWidths.scoliosis / 2, tableY, colWidths.scoliosis / 2, rowHeight).stroke();
+      doc.text(String(gradeData.scoliosis?.failed ?? 0), colX.scoliosis + colWidths.scoliosis / 2 + cellPadding, tableY + 6, { width: colWidths.scoliosis / 2 - cellPadding * 2, align: 'left' });
+      
+      doc.rect(colX.glasses, tableY, colWidths.glasses, rowHeight).stroke();
+      doc.text(String(gradeData.glassesContacts ?? 0), colX.glasses + cellPadding, tableY + 6, { width: colWidths.glasses - cellPadding * 2, align: 'left' });
+      
+      tableY += rowHeight;
+    }
+    
+    // Finalize PDF
+    doc.end();
     
   } catch (error) {
     next(error);

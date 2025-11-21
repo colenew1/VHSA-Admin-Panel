@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSchools, exportStickers, getStickerPreview, getReportingData, updateReportingData } from '../api/client';
+import { getSchools, exportStickers, getStickerPreview, getReportingData, updateReportingData, exportReportingPDF } from '../api/client';
 import EditableCell from '../components/EditableCell';
 
 export default function Export() {
@@ -198,6 +198,40 @@ export default function Export() {
   const handleSaveReporting = () => {
     if (!reportData) return;
     updateReportingMutation.mutate(reportData);
+  };
+  
+  // Handle export reporting as PDF
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const handleExportReportingPDF = async () => {
+    if (!reportData) {
+      alert('Please generate a report first');
+      return;
+    }
+    
+    setIsExportingPDF(true);
+    try {
+      const blob = await exportReportingPDF({
+        reportData,
+        school: reportSchool,
+        startDate: startDate || undefined,
+        endDate: endDate || undefined,
+        year: year || undefined
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const schoolName = reportSchool === 'all' ? 'All-Schools' : reportSchool.replace(/\s+/g, '-');
+      const dateStr = new Date().toISOString().split('T')[0];
+      a.download = `reporting-${schoolName}-${dateStr}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      alert(`Error exporting PDF: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setIsExportingPDF(false);
+    }
   };
   
   
@@ -491,13 +525,22 @@ export default function Export() {
             <div className="space-y-4">
               <div className="flex justify-between items-center">
                 <h2 className="text-lg font-semibold text-gray-900">Reporting Statistics</h2>
-                <button
-                  onClick={handleSaveReporting}
-                  disabled={updateReportingMutation.isLoading}
-                  className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
-                >
-                  {updateReportingMutation.isLoading ? 'Saving...' : 'Save Changes'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExportReportingPDF}
+                    disabled={isExportingPDF}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+                  >
+                    {isExportingPDF ? 'Exporting PDF...' : 'Download PDF'}
+                  </button>
+                  <button
+                    onClick={handleSaveReporting}
+                    disabled={updateReportingMutation.isLoading}
+                    className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
+                  >
+                    {updateReportingMutation.isLoading ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
               </div>
               
               <div className="overflow-x-auto border border-gray-300 rounded-lg">

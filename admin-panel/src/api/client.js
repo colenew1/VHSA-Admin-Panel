@@ -74,6 +74,9 @@ export const getReportingData = (params) =>
 export const updateReportingData = (data) =>
   api.put('/exports/reporting', data).then(res => res.data);
 
+export const exportReportingPDF = (params) =>
+  api.post('/exports/reporting/pdf', params, { responseType: 'blob' }).then(res => res.data);
+
 // Screening Data
 export const getScreeningData = (params) =>
   api.get('/screening/data', { params }).then(res => res.data);
