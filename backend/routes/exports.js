@@ -1116,6 +1116,339 @@ router.post('/reporting/pdf', async (req, res, next) => {
   }
 });
 
+// Search and export students with comprehensive data
+router.get('/students', async (req, res, next) => {
+  try {
+    const {
+      school = 'all',
+      grade,
+      status,
+      year,
+      startDate,
+      endDate,
+      search
+    } = req.query;
+
+    // Start with students query
+    let studentsQuery = supabase
+      .from('students')
+      .select('*');
+
+    // Apply school filter
+    if (school !== 'all') {
+      studentsQuery = studentsQuery.eq('school', school);
+    }
+
+    // Apply grade filter if provided
+    if (grade) {
+      const grades = grade.split(',');
+      studentsQuery = studentsQuery.in('grade', grades);
+    }
+
+    // Apply status filter if provided
+    if (status && status !== 'all') {
+      studentsQuery = studentsQuery.eq('status', status);
+    }
+
+    // Apply search filter (name or ID)
+    if (search) {
+      studentsQuery = studentsQuery.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,unique_id.ilike.%${search}%`);
+    }
+
+    const { data: studentsData, error: studentsError } = await studentsQuery;
+
+    if (studentsError) throw studentsError;
+
+    if (!studentsData || studentsData.length === 0) {
+      return res.json({
+        students: [],
+        count: 0
+      });
+    }
+
+    // Get all unique_ids from students
+    const uniqueIds = studentsData.map(s => s.unique_id).filter(Boolean);
+
+    // Fetch screening_results for these students
+    let screeningMap = {};
+    if (uniqueIds.length > 0) {
+      let screeningQuery = supabase
+        .from('screening_results')
+        .select('*')
+        .in('unique_id', uniqueIds);
+
+      // Apply year filter if provided (uses created_at from screening_results)
+      if (year) {
+        const yearStart = `${year}-01-01T00:00:00Z`;
+        const yearEnd = `${year}-12-31T23:59:59Z`;
+        screeningQuery = screeningQuery.gte('created_at', yearStart);
+        screeningQuery = screeningQuery.lte('created_at', yearEnd);
+      }
+
+      // Apply screening date filters if provided
+      if (startDate) {
+        screeningQuery = screeningQuery.gte('initial_screening_date', startDate);
+      }
+      if (endDate) {
+        screeningQuery = screeningQuery.lte('initial_screening_date', endDate);
+      }
+
+      const { data: screeningData, error: screeningError } = await screeningQuery;
+      
+      if (screeningError) {
+        console.error('Error fetching screening results:', screeningError);
+      } else if (screeningData) {
+        // Create map by unique_id (keep most recent if multiple)
+        screeningData.forEach(row => {
+          const uniqueId = row.unique_id;
+          if (uniqueId) {
+            if (!screeningMap[uniqueId] || 
+                new Date(row.created_at || row.initial_screening_date || 0) > 
+                new Date(screeningMap[uniqueId].created_at || screeningMap[uniqueId].initial_screening_date || 0)) {
+              screeningMap[uniqueId] = row;
+            }
+          }
+        });
+      }
+    }
+
+    // Transform data - combine students with screening results, include ALL fields
+    const results = studentsData.map((student) => {
+      const screeningRow = screeningMap[student.unique_id] || null;
+      
+      return {
+        // Student basic info
+        unique_id: student.unique_id || '',
+        student_id: screeningRow?.student_id || student.unique_id || '',
+        first_name: student.first_name || '',
+        last_name: student.last_name || '',
+        full_name: `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+        grade: student.grade || '',
+        gender: student.gender || '',
+        dob: student.dob || null,
+        school: student.school || '',
+        teacher: student.teacher || '',
+        status: student.status || '',
+        notes: student.notes || '',
+        created_at: student.created_at || null,
+        
+        // Screening metadata
+        screening_year: screeningRow?.screening_year || null,
+        initial_screening_date: screeningRow?.initial_screening_date || null,
+        was_absent: screeningRow?.was_absent ?? false,
+        glasses_or_contacts: screeningRow?.glasses_or_contacts || screeningRow?.vision_initial_glasses || screeningRow?.vision_rescreen_glasses || null,
+        
+        // Vision
+        vision_required: screeningRow?.vision_required ?? false,
+        vision_complete: screeningRow?.vision_complete ?? false,
+        vision_initial_right: screeningRow?.vision_initial_right_eye ?? null,
+        vision_initial_left: screeningRow?.vision_initial_left_eye ?? null,
+        vision_rescreen_right: screeningRow?.vision_rescreen_right_eye ?? null,
+        vision_rescreen_left: screeningRow?.vision_rescreen_left_eye ?? null,
+        vision_initial_glasses: screeningRow?.vision_initial_glasses || null,
+        vision_rescreen_glasses: screeningRow?.vision_rescreen_glasses || null,
+        
+        // Hearing
+        hearing_required: screeningRow?.hearing_required ?? false,
+        hearing_complete: screeningRow?.hearing_complete ?? false,
+        hearing_initial_right_1000: screeningRow?.hearing_initial_right_1000 ?? null,
+        hearing_initial_right_2000: screeningRow?.hearing_initial_right_2000 ?? null,
+        hearing_initial_right_4000: screeningRow?.hearing_initial_right_4000 ?? null,
+        hearing_initial_left_1000: screeningRow?.hearing_initial_left_1000 ?? null,
+        hearing_initial_left_2000: screeningRow?.hearing_initial_left_2000 ?? null,
+        hearing_initial_left_4000: screeningRow?.hearing_initial_left_4000 ?? null,
+        hearing_rescreen_right_1000: screeningRow?.hearing_rescreen_right_1000 ?? null,
+        hearing_rescreen_right_2000: screeningRow?.hearing_rescreen_right_2000 ?? null,
+        hearing_rescreen_right_4000: screeningRow?.hearing_rescreen_right_4000 ?? null,
+        hearing_rescreen_left_1000: screeningRow?.hearing_rescreen_left_1000 ?? null,
+        hearing_rescreen_left_2000: screeningRow?.hearing_rescreen_left_2000 ?? null,
+        hearing_rescreen_left_4000: screeningRow?.hearing_rescreen_left_4000 ?? null,
+        
+        // Acanthosis
+        acanthosis_required: screeningRow?.acanthosis_required ?? false,
+        acanthosis_complete: screeningRow?.acanthosis_complete ?? false,
+        acanthosis_initial: screeningRow?.acanthosis_initial_result ?? null,
+        acanthosis_rescreen: screeningRow?.acanthosis_rescreen_result ?? null,
+        
+        // Scoliosis
+        scoliosis_required: screeningRow?.scoliosis_required ?? false,
+        scoliosis_complete: screeningRow?.scoliosis_complete ?? false,
+        scoliosis_initial: screeningRow?.scoliosis_initial_result ?? null,
+        scoliosis_rescreen: screeningRow?.scoliosis_rescreen_result ?? null,
+        
+        // Notes
+        initial_notes: screeningRow?.initial_notes || null,
+        rescreen_notes: screeningRow?.rescreen_notes || null,
+        
+        // Timestamps
+        screening_created_at: screeningRow?.created_at || null,
+        screening_updated_at: screeningRow?.updated_at || null
+      };
+    });
+
+    res.json({
+      students: results,
+      count: results.length
+    });
+
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Export students as CSV
+router.get('/students/export', async (req, res, next) => {
+  try {
+    // Reuse the same search logic
+    const {
+      school = 'all',
+      grade,
+      status,
+      year,
+      startDate,
+      endDate,
+      search
+    } = req.query;
+
+    // Start with students query
+    let studentsQuery = supabase
+      .from('students')
+      .select('*');
+
+    if (school !== 'all') {
+      studentsQuery = studentsQuery.eq('school', school);
+    }
+
+    if (grade) {
+      const grades = grade.split(',');
+      studentsQuery = studentsQuery.in('grade', grades);
+    }
+
+    if (status && status !== 'all') {
+      studentsQuery = studentsQuery.eq('status', status);
+    }
+
+    if (search) {
+      studentsQuery = studentsQuery.or(`first_name.ilike.%${search}%,last_name.ilike.%${search}%,unique_id.ilike.%${search}%`);
+    }
+
+    const { data: studentsData, error: studentsError } = await studentsQuery;
+
+    if (studentsError) throw studentsError;
+
+    if (!studentsData || studentsData.length === 0) {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="students-export.csv"');
+      return res.send('No students found');
+    }
+
+    const uniqueIds = studentsData.map(s => s.unique_id).filter(Boolean);
+    let screeningMap = {};
+
+    if (uniqueIds.length > 0) {
+      let screeningQuery = supabase
+        .from('screening_results')
+        .select('*')
+        .in('unique_id', uniqueIds);
+
+      if (year) {
+        const yearStart = `${year}-01-01T00:00:00Z`;
+        const yearEnd = `${year}-12-31T23:59:59Z`;
+        screeningQuery = screeningQuery.gte('created_at', yearStart);
+        screeningQuery = screeningQuery.lte('created_at', yearEnd);
+      }
+
+      if (startDate) {
+        screeningQuery = screeningQuery.gte('initial_screening_date', startDate);
+      }
+      if (endDate) {
+        screeningQuery = screeningQuery.lte('initial_screening_date', endDate);
+      }
+
+      const { data: screeningData, error: screeningError } = await screeningQuery;
+      
+      if (!screeningError && screeningData) {
+        screeningData.forEach(row => {
+          const uniqueId = row.unique_id;
+          if (uniqueId) {
+            if (!screeningMap[uniqueId] || 
+                new Date(row.created_at || row.initial_screening_date || 0) > 
+                new Date(screeningMap[uniqueId].created_at || screeningMap[uniqueId].initial_screening_date || 0)) {
+              screeningMap[uniqueId] = row;
+            }
+          }
+        });
+      }
+    }
+
+    // Transform to comprehensive CSV format
+    const csvData = studentsData.map((student) => {
+      const screeningRow = screeningMap[student.unique_id] || null;
+      
+      return {
+        'Student ID': student.unique_id || '',
+        'First Name': student.first_name || '',
+        'Last Name': student.last_name || '',
+        'Full Name': `${student.first_name || ''} ${student.last_name || ''}`.trim(),
+        'Grade': student.grade || '',
+        'Gender': student.gender || '',
+        'Date of Birth': student.dob || '',
+        'School': student.school || '',
+        'Teacher': student.teacher || '',
+        'Status': student.status || '',
+        'Student Notes': student.notes || '',
+        'Screening Year': screeningRow?.screening_year || '',
+        'Initial Screening Date': screeningRow?.initial_screening_date || '',
+        'Was Absent': screeningRow?.was_absent ? 'Yes' : 'No',
+        'Glasses/Contacts': screeningRow?.glasses_or_contacts || screeningRow?.vision_initial_glasses || screeningRow?.vision_rescreen_glasses || '',
+        'Vision Required': screeningRow?.vision_required ? 'Yes' : 'No',
+        'Vision Complete': screeningRow?.vision_complete ? 'Yes' : 'No',
+        'Vision Initial Right': screeningRow?.vision_initial_right_eye || '',
+        'Vision Initial Left': screeningRow?.vision_initial_left_eye || '',
+        'Vision Rescreen Right': screeningRow?.vision_rescreen_right_eye || '',
+        'Vision Rescreen Left': screeningRow?.vision_rescreen_left_eye || '',
+        'Hearing Required': screeningRow?.hearing_required ? 'Yes' : 'No',
+        'Hearing Complete': screeningRow?.hearing_complete ? 'Yes' : 'No',
+        'Hearing Initial R 1000': screeningRow?.hearing_initial_right_1000 || '',
+        'Hearing Initial R 2000': screeningRow?.hearing_initial_right_2000 || '',
+        'Hearing Initial R 4000': screeningRow?.hearing_initial_right_4000 || '',
+        'Hearing Initial L 1000': screeningRow?.hearing_initial_left_1000 || '',
+        'Hearing Initial L 2000': screeningRow?.hearing_initial_left_2000 || '',
+        'Hearing Initial L 4000': screeningRow?.hearing_initial_left_4000 || '',
+        'Hearing Rescreen R 1000': screeningRow?.hearing_rescreen_right_1000 || '',
+        'Hearing Rescreen R 2000': screeningRow?.hearing_rescreen_right_2000 || '',
+        'Hearing Rescreen R 4000': screeningRow?.hearing_rescreen_right_4000 || '',
+        'Hearing Rescreen L 1000': screeningRow?.hearing_rescreen_left_1000 || '',
+        'Hearing Rescreen L 2000': screeningRow?.hearing_rescreen_left_2000 || '',
+        'Hearing Rescreen L 4000': screeningRow?.hearing_rescreen_left_4000 || '',
+        'Acanthosis Required': screeningRow?.acanthosis_required ? 'Yes' : 'No',
+        'Acanthosis Complete': screeningRow?.acanthosis_complete ? 'Yes' : 'No',
+        'Acanthosis Initial': screeningRow?.acanthosis_initial_result || '',
+        'Acanthosis Rescreen': screeningRow?.acanthosis_rescreen_result || '',
+        'Scoliosis Required': screeningRow?.scoliosis_required ? 'Yes' : 'No',
+        'Scoliosis Complete': screeningRow?.scoliosis_complete ? 'Yes' : 'No',
+        'Scoliosis Initial': screeningRow?.scoliosis_initial_result || '',
+        'Scoliosis Rescreen': screeningRow?.scoliosis_rescreen_result || '',
+        'Initial Notes': screeningRow?.initial_notes || '',
+        'Rescreen Notes': screeningRow?.rescreen_notes || '',
+        'Student Created At': student.created_at || '',
+        'Screening Created At': screeningRow?.created_at || ''
+      };
+    });
+
+    const csv = convertToCSV(csvData);
+    
+    res.setHeader('Content-Type', 'text/csv');
+    const schoolName = school === 'all' ? 'All-Schools' : school.replace(/\s+/g, '-');
+    const dateStr = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Disposition', `attachment; filename="students-export-${schoolName}-${dateStr}.csv"`);
+    res.send(csv);
+
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Helper function to convert JSON to CSV
 function convertToCSV(data) {
   if (!data || data.length === 0) return '';
@@ -1126,7 +1459,10 @@ function convertToCSV(data) {
   for (const row of data) {
     const values = headers.map(header => {
       const value = row[header];
-      return `"${value !== null && value !== undefined ? value : ''}"`;
+      // Escape quotes and wrap in quotes
+      const stringValue = value !== null && value !== undefined ? String(value) : '';
+      const escaped = stringValue.replace(/"/g, '""');
+      return `"${escaped}"`;
     });
     csvRows.push(values.join(','));
   }

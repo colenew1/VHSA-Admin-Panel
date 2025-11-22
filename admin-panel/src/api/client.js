@@ -129,6 +129,13 @@ export const updateReportingData = (data) =>
 export const exportReportingPDF = (params) =>
   api.post('/exports/reporting/pdf', params, { responseType: 'blob' }).then(res => res.data);
 
+// Student Export
+export const searchStudentsForExport = (params) =>
+  api.get('/exports/students', { params }).then(res => res.data);
+
+export const exportStudentsCSV = (params) =>
+  api.get('/exports/students/export', { params, responseType: 'blob' }).then(res => res.data);
+
 // Screening Data
 export const getScreeningData = (params) =>
   api.get('/screening/data', { params }).then(res => res.data);

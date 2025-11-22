@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSchools, exportStickers, getStickerPreview, getReportingData, updateReportingData, exportReportingPDF } from '../api/client';
+import { getSchools, exportStickers, getStickerPreview, getReportingData, updateReportingData, exportReportingPDF, searchStudentsForExport, exportStudentsCSV } from '../api/client';
 import EditableCell from '../components/EditableCell';
 
 export default function Export() {
@@ -8,6 +8,17 @@ export default function Export() {
   
   // Year filter (shared across both tabs)
   const [year, setYear] = useState(new Date().getFullYear().toString());
+  
+  // Student Export tab state
+  const [studentExportSchool, setStudentExportSchool] = useState('all');
+  const [studentExportGrade, setStudentExportGrade] = useState('');
+  const [studentExportStatus, setStudentExportStatus] = useState('all');
+  const [studentExportSearch, setStudentExportSearch] = useState('');
+  const [studentExportStartDate, setStudentExportStartDate] = useState('');
+  const [studentExportEndDate, setStudentExportEndDate] = useState('');
+  const [studentExportResults, setStudentExportResults] = useState(null);
+  const [shouldSearchStudents, setShouldSearchStudents] = useState(false);
+  const [isExportingStudents, setIsExportingStudents] = useState(false);
   
   // Sticker tab state
   const [selectedSchool, setSelectedSchool] = useState('');
@@ -53,6 +64,28 @@ export default function Export() {
     }),
     enabled: shouldFetch, // Only fetch when Generate Report is clicked
   });
+  
+  // Fetch student export data
+  const { data: studentExportData, isLoading: loadingStudentExport } = useQuery({
+    queryKey: ['studentExport', studentExportSchool, studentExportGrade, studentExportStatus, studentExportSearch, studentExportStartDate, studentExportEndDate, year],
+    queryFn: () => searchStudentsForExport({
+      school: studentExportSchool,
+      grade: studentExportGrade || undefined,
+      status: studentExportStatus,
+      search: studentExportSearch || undefined,
+      startDate: studentExportStartDate || undefined,
+      endDate: studentExportEndDate || undefined,
+      year: year || undefined,
+    }),
+    enabled: shouldSearchStudents, // Only fetch when Search is clicked
+  });
+  
+  // Update results when data changes
+  useEffect(() => {
+    if (studentExportData) {
+      setStudentExportResults(studentExportData);
+    }
+  }, [studentExportData]);
   
   // Store original data for cancel
   const [originalReportData, setOriginalReportData] = useState(null);
@@ -233,6 +266,47 @@ export default function Export() {
     setShowSaveConfirm(false);
   };
   
+  // Handle student export search
+  const handleSearchStudents = () => {
+    setShouldSearchStudents(true);
+    queryClient.invalidateQueries(['studentExport', studentExportSchool, studentExportGrade, studentExportStatus, studentExportSearch, studentExportStartDate, studentExportEndDate, year]);
+  };
+  
+  // Handle export students as CSV
+  const handleExportStudentsCSV = async () => {
+    if (!studentExportResults || studentExportResults.count === 0) {
+      alert('Please search for students first');
+      return;
+    }
+    
+    setIsExportingStudents(true);
+    try {
+      const blob = await exportStudentsCSV({
+        school: studentExportSchool,
+        grade: studentExportGrade || undefined,
+        status: studentExportStatus,
+        search: studentExportSearch || undefined,
+        startDate: studentExportStartDate || undefined,
+        endDate: studentExportEndDate || undefined,
+        year: year || undefined,
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const schoolName = studentExportSchool === 'all' ? 'All-Schools' : studentExportSchool.replace(/\s+/g, '-');
+      const dateStr = new Date().toISOString().split('T')[0];
+      a.download = `students-export-${schoolName}-${dateStr}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      alert(`Error exporting CSV: ${error.response?.data?.error || error.message}`);
+    } finally {
+      setIsExportingStudents(false);
+    }
+  };
+  
   // Handle export reporting as PDF
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const handleExportReportingPDF = async () => {
@@ -320,6 +394,16 @@ export default function Export() {
             }`}
           >
             Reporting
+          </button>
+          <button
+            onClick={() => setActiveTab('students')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'students'
+                ? 'text-blue-600 border-blue-600'
+                : 'text-gray-600 border-transparent hover:text-gray-900 hover:border-gray-300'
+            }`}
+          >
+            Students
           </button>
         </nav>
       </div>
@@ -867,6 +951,225 @@ export default function Export() {
           {loadingReporting && (
             <div className="text-center py-8 text-gray-600">
               Generating report...
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Students Export Tab */}
+      {activeTab === 'students' && (
+        <div className="space-y-6">
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <p className="text-sm text-blue-800 font-medium mb-2">
+              Export Students - Comprehensive Data Export
+            </p>
+            <p className="text-sm text-blue-800">
+              Search for students using filters below, then export all matching student data as CSV with complete screening information.
+            </p>
+          </div>
+          
+          {/* Filters */}
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  School
+                </label>
+                <select
+                  value={studentExportSchool}
+                  onChange={(e) => {
+                    setStudentExportSchool(e.target.value);
+                    setStudentExportResults(null);
+                    setShouldSearchStudents(false);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                >
+                  <option value="all">All Schools</option>
+                  {schools.map((school) => (
+                    <option key={school.id} value={school.name}>
+                      {school.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Grade (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={studentExportGrade}
+                  onChange={(e) => {
+                    setStudentExportGrade(e.target.value);
+                    setStudentExportResults(null);
+                    setShouldSearchStudents(false);
+                  }}
+                  placeholder="e.g., 5th, 6th or 5th,6th,7th"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Status
+                </label>
+                <select
+                  value={studentExportStatus}
+                  onChange={(e) => {
+                    setStudentExportStatus(e.target.value);
+                    setStudentExportResults(null);
+                    setShouldSearchStudents(false);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="New">New</option>
+                  <option value="Returning">Returning</option>
+                </select>
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Search (Name or ID)
+                </label>
+                <input
+                  type="text"
+                  value={studentExportSearch}
+                  onChange={(e) => {
+                    setStudentExportSearch(e.target.value);
+                    setStudentExportResults(null);
+                    setShouldSearchStudents(false);
+                  }}
+                  placeholder="Search by name or student ID"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Start Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={studentExportStartDate}
+                  onChange={(e) => {
+                    setStudentExportStartDate(e.target.value);
+                    setStudentExportResults(null);
+                    setShouldSearchStudents(false);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  End Date (Optional)
+                </label>
+                <input
+                  type="date"
+                  value={studentExportEndDate}
+                  onChange={(e) => {
+                    setStudentExportEndDate(e.target.value);
+                    setStudentExportResults(null);
+                    setShouldSearchStudents(false);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                />
+              </div>
+            </div>
+            
+            <div className="mt-4">
+              <button
+                onClick={handleSearchStudents}
+                disabled={loadingStudentExport}
+                className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
+              >
+                {loadingStudentExport ? 'Searching...' : 'Search Students'}
+              </button>
+            </div>
+          </div>
+          
+          {/* Results */}
+          {studentExportResults && (
+            <div className="space-y-4">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-900">
+                  Search Results ({studentExportResults.count} student{studentExportResults.count !== 1 ? 's' : ''})
+                </h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleExportStudentsCSV}
+                    disabled={isExportingStudents || studentExportResults.count === 0}
+                    className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isExportingStudents ? 'Exporting...' : 'Export CSV'}
+                  </button>
+                </div>
+              </div>
+              
+              {studentExportResults.count > 0 ? (
+                <div className="bg-white border border-gray-300 rounded-lg p-4">
+                  <p className="text-sm text-gray-700 mb-4">
+                    Found <strong>{studentExportResults.count}</strong> student{studentExportResults.count !== 1 ? 's' : ''} matching your search criteria.
+                    {studentExportResults.count > 0 && (
+                      <span className="block mt-2 text-blue-600 font-medium">
+                        Would you like to export?
+                      </span>
+                    )}
+                  </p>
+                  
+                  {/* Preview Table - Show first 10 rows */}
+                  <div className="overflow-x-auto border border-gray-300 rounded-lg">
+                    <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Student ID</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Name</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Grade</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">School</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Status</th>
+                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Screening Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {studentExportResults.students.slice(0, 10).map((student, index) => (
+                          <tr key={index}>
+                            <td className="border border-gray-300 px-3 py-2">{student.unique_id || ''}</td>
+                            <td className="border border-gray-300 px-3 py-2">{student.full_name || `${student.first_name} ${student.last_name}`.trim()}</td>
+                            <td className="border border-gray-300 px-3 py-2">{student.grade || ''}</td>
+                            <td className="border border-gray-300 px-3 py-2">{student.school || ''}</td>
+                            <td className="border border-gray-300 px-3 py-2">{student.status || ''}</td>
+                            <td className="border border-gray-300 px-3 py-2">{student.initial_screening_date || 'Not screened'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {studentExportResults.count > 10 && (
+                    <p className="mt-2 text-sm text-gray-600 text-center">
+                      Showing first 10 of {studentExportResults.count} students. Export CSV to see all data.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-600">
+                  No students found matching your search criteria.
+                </div>
+              )}
+            </div>
+          )}
+          
+          {!studentExportResults && shouldSearchStudents && !loadingStudentExport && (
+            <div className="text-center py-8 text-gray-600">
+              No data available
+            </div>
+          )}
+          
+          {loadingStudentExport && (
+            <div className="text-center py-8 text-gray-600">
+              Searching students...
             </div>
           )}
         </div>
