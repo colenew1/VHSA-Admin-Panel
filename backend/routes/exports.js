@@ -1381,11 +1381,57 @@ router.get('/students/export', async (req, res, next) => {
       }
     }
 
-    // Transform to comprehensive CSV format
+    // Helper function to determine if a test failed (F = fail)
+    const didTestFail = (value) => {
+      if (!value) return 'No';
+      return String(value).toUpperCase() === 'F' ? 'Yes' : 'No';
+    };
+    
+    // Transform to comprehensive CSV format with ALL fields
     const csvData = studentsData.map((student) => {
       const screeningRow = screeningMap[student.unique_id] || null;
       
+      // Determine pass/fail for each test type
+      const visionFailed = screeningRow ? (
+        didTestFail(screeningRow.vision_initial_right_eye) === 'Yes' ||
+        didTestFail(screeningRow.vision_initial_left_eye) === 'Yes' ||
+        didTestFail(screeningRow.vision_rescreen_right_eye) === 'Yes' ||
+        didTestFail(screeningRow.vision_rescreen_left_eye) === 'Yes'
+      ) : false;
+      
+      const hearingFailed = screeningRow ? (
+        didTestFail(screeningRow.hearing_initial_right_1000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_initial_right_2000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_initial_right_4000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_initial_left_1000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_initial_left_2000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_initial_left_4000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_rescreen_right_1000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_rescreen_right_2000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_rescreen_right_4000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_rescreen_left_1000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_rescreen_left_2000) === 'Yes' ||
+        didTestFail(screeningRow.hearing_rescreen_left_4000) === 'Yes'
+      ) : false;
+      
+      const acanthosisFailed = screeningRow ? (
+        didTestFail(screeningRow.acanthosis_initial_result) === 'Yes' ||
+        didTestFail(screeningRow.acanthosis_rescreen_result) === 'Yes'
+      ) : false;
+      
+      const scoliosisFailed = screeningRow ? (
+        didTestFail(screeningRow.scoliosis_initial_result) === 'Yes' ||
+        didTestFail(screeningRow.scoliosis_rescreen_result) === 'Yes'
+      ) : false;
+      
+      // Get glasses/contacts info
+      const glassesContacts = screeningRow?.glasses_or_contacts || 
+                              screeningRow?.vision_initial_glasses || 
+                              screeningRow?.vision_rescreen_glasses || 
+                              '';
+      
       return {
+        // Student Basic Information
         'Student ID': student.unique_id || '',
         'First Name': student.first_name || '',
         'Last Name': student.last_name || '',
@@ -1397,42 +1443,99 @@ router.get('/students/export', async (req, res, next) => {
         'Teacher': student.teacher || '',
         'Status': student.status || '',
         'Student Notes': student.notes || '',
+        'Student Created At': student.created_at || '',
+        
+        // Screening Metadata
         'Screening Year': screeningRow?.screening_year || '',
         'Initial Screening Date': screeningRow?.initial_screening_date || '',
-        'Was Absent': screeningRow?.was_absent ? 'Yes' : 'No',
-        'Glasses/Contacts': screeningRow?.glasses_or_contacts || screeningRow?.vision_initial_glasses || screeningRow?.vision_rescreen_glasses || '',
+        'Was Absent': 'No', // Should be No for everyone since rescreens should happen
+        'Glasses/Contacts': glassesContacts,
+        'Vision Initial Glasses': screeningRow?.vision_initial_glasses || '',
+        'Vision Rescreen Glasses': screeningRow?.vision_rescreen_glasses || '',
+        
+        // Vision Screening - Requirements & Status
         'Vision Required': screeningRow?.vision_required ? 'Yes' : 'No',
         'Vision Complete': screeningRow?.vision_complete ? 'Yes' : 'No',
-        'Vision Initial Right': screeningRow?.vision_initial_right_eye || '',
-        'Vision Initial Left': screeningRow?.vision_initial_left_eye || '',
-        'Vision Rescreen Right': screeningRow?.vision_rescreen_right_eye || '',
-        'Vision Rescreen Left': screeningRow?.vision_rescreen_left_eye || '',
+        'Vision Failed': visionFailed ? 'Yes' : 'No',
+        
+        // Vision Screening - Initial Results
+        'Vision Initial Right Eye': screeningRow?.vision_initial_right_eye || '',
+        'Vision Initial Left Eye': screeningRow?.vision_initial_left_eye || '',
+        'Vision Initial Right Failed': didTestFail(screeningRow?.vision_initial_right_eye),
+        'Vision Initial Left Failed': didTestFail(screeningRow?.vision_initial_left_eye),
+        
+        // Vision Screening - Rescreen Results
+        'Vision Rescreen Right Eye': screeningRow?.vision_rescreen_right_eye || '',
+        'Vision Rescreen Left Eye': screeningRow?.vision_rescreen_left_eye || '',
+        'Vision Rescreen Right Failed': didTestFail(screeningRow?.vision_rescreen_right_eye),
+        'Vision Rescreen Left Failed': didTestFail(screeningRow?.vision_rescreen_left_eye),
+        
+        // Hearing Screening - Requirements & Status
         'Hearing Required': screeningRow?.hearing_required ? 'Yes' : 'No',
         'Hearing Complete': screeningRow?.hearing_complete ? 'Yes' : 'No',
-        'Hearing Initial R 1000': screeningRow?.hearing_initial_right_1000 || '',
-        'Hearing Initial R 2000': screeningRow?.hearing_initial_right_2000 || '',
-        'Hearing Initial R 4000': screeningRow?.hearing_initial_right_4000 || '',
-        'Hearing Initial L 1000': screeningRow?.hearing_initial_left_1000 || '',
-        'Hearing Initial L 2000': screeningRow?.hearing_initial_left_2000 || '',
-        'Hearing Initial L 4000': screeningRow?.hearing_initial_left_4000 || '',
-        'Hearing Rescreen R 1000': screeningRow?.hearing_rescreen_right_1000 || '',
-        'Hearing Rescreen R 2000': screeningRow?.hearing_rescreen_right_2000 || '',
-        'Hearing Rescreen R 4000': screeningRow?.hearing_rescreen_right_4000 || '',
-        'Hearing Rescreen L 1000': screeningRow?.hearing_rescreen_left_1000 || '',
-        'Hearing Rescreen L 2000': screeningRow?.hearing_rescreen_left_2000 || '',
-        'Hearing Rescreen L 4000': screeningRow?.hearing_rescreen_left_4000 || '',
+        'Hearing Failed': hearingFailed ? 'Yes' : 'No',
+        
+        // Hearing Screening - Initial Right Ear
+        'Hearing Initial Right 1000': screeningRow?.hearing_initial_right_1000 || '',
+        'Hearing Initial Right 2000': screeningRow?.hearing_initial_right_2000 || '',
+        'Hearing Initial Right 4000': screeningRow?.hearing_initial_right_4000 || '',
+        'Hearing Initial Right 1000 Failed': didTestFail(screeningRow?.hearing_initial_right_1000),
+        'Hearing Initial Right 2000 Failed': didTestFail(screeningRow?.hearing_initial_right_2000),
+        'Hearing Initial Right 4000 Failed': didTestFail(screeningRow?.hearing_initial_right_4000),
+        
+        // Hearing Screening - Initial Left Ear
+        'Hearing Initial Left 1000': screeningRow?.hearing_initial_left_1000 || '',
+        'Hearing Initial Left 2000': screeningRow?.hearing_initial_left_2000 || '',
+        'Hearing Initial Left 4000': screeningRow?.hearing_initial_left_4000 || '',
+        'Hearing Initial Left 1000 Failed': didTestFail(screeningRow?.hearing_initial_left_1000),
+        'Hearing Initial Left 2000 Failed': didTestFail(screeningRow?.hearing_initial_left_2000),
+        'Hearing Initial Left 4000 Failed': didTestFail(screeningRow?.hearing_initial_left_4000),
+        
+        // Hearing Screening - Rescreen Right Ear
+        'Hearing Rescreen Right 1000': screeningRow?.hearing_rescreen_right_1000 || '',
+        'Hearing Rescreen Right 2000': screeningRow?.hearing_rescreen_right_2000 || '',
+        'Hearing Rescreen Right 4000': screeningRow?.hearing_rescreen_right_4000 || '',
+        'Hearing Rescreen Right 1000 Failed': didTestFail(screeningRow?.hearing_rescreen_right_1000),
+        'Hearing Rescreen Right 2000 Failed': didTestFail(screeningRow?.hearing_rescreen_right_2000),
+        'Hearing Rescreen Right 4000 Failed': didTestFail(screeningRow?.hearing_rescreen_right_4000),
+        
+        // Hearing Screening - Rescreen Left Ear
+        'Hearing Rescreen Left 1000': screeningRow?.hearing_rescreen_left_1000 || '',
+        'Hearing Rescreen Left 2000': screeningRow?.hearing_rescreen_left_2000 || '',
+        'Hearing Rescreen Left 4000': screeningRow?.hearing_rescreen_left_4000 || '',
+        'Hearing Rescreen Left 1000 Failed': didTestFail(screeningRow?.hearing_rescreen_left_1000),
+        'Hearing Rescreen Left 2000 Failed': didTestFail(screeningRow?.hearing_rescreen_left_2000),
+        'Hearing Rescreen Left 4000 Failed': didTestFail(screeningRow?.hearing_rescreen_left_4000),
+        
+        // Acanthosis Screening - Requirements & Status
         'Acanthosis Required': screeningRow?.acanthosis_required ? 'Yes' : 'No',
         'Acanthosis Complete': screeningRow?.acanthosis_complete ? 'Yes' : 'No',
-        'Acanthosis Initial': screeningRow?.acanthosis_initial_result || '',
-        'Acanthosis Rescreen': screeningRow?.acanthosis_rescreen_result || '',
+        'Acanthosis Failed': acanthosisFailed ? 'Yes' : 'No',
+        
+        // Acanthosis Screening - Results
+        'Acanthosis Initial Result': screeningRow?.acanthosis_initial_result || '',
+        'Acanthosis Rescreen Result': screeningRow?.acanthosis_rescreen_result || '',
+        'Acanthosis Initial Failed': didTestFail(screeningRow?.acanthosis_initial_result),
+        'Acanthosis Rescreen Failed': didTestFail(screeningRow?.acanthosis_rescreen_result),
+        
+        // Scoliosis Screening - Requirements & Status
         'Scoliosis Required': screeningRow?.scoliosis_required ? 'Yes' : 'No',
         'Scoliosis Complete': screeningRow?.scoliosis_complete ? 'Yes' : 'No',
-        'Scoliosis Initial': screeningRow?.scoliosis_initial_result || '',
-        'Scoliosis Rescreen': screeningRow?.scoliosis_rescreen_result || '',
+        'Scoliosis Failed': scoliosisFailed ? 'Yes' : 'No',
+        
+        // Scoliosis Screening - Results
+        'Scoliosis Initial Result': screeningRow?.scoliosis_initial_result || '',
+        'Scoliosis Rescreen Result': screeningRow?.scoliosis_rescreen_result || '',
+        'Scoliosis Initial Failed': didTestFail(screeningRow?.scoliosis_initial_result),
+        'Scoliosis Rescreen Failed': didTestFail(screeningRow?.scoliosis_rescreen_result),
+        
+        // Notes
         'Initial Notes': screeningRow?.initial_notes || '',
         'Rescreen Notes': screeningRow?.rescreen_notes || '',
-        'Student Created At': student.created_at || '',
-        'Screening Created At': screeningRow?.created_at || ''
+        
+        // Timestamps
+        'Screening Created At': screeningRow?.created_at || '',
+        'Screening Updated At': screeningRow?.updated_at || ''
       };
     });
 
