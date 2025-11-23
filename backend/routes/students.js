@@ -476,6 +476,14 @@ router.get('/search/notes', async (req, res, next) => {
         teacher: student.teacher || '',
         status: student.status || '',
         notes: student.notes || '', // Student notes
+        initial_notes: screeningRow?.initial_notes || '', // Initial screening notes
+        rescreen_notes: screeningRow?.rescreen_notes || '', // Rescreen notes
+        // Combine all notes for display
+        all_notes: [
+          student.notes || '',
+          screeningRow?.initial_notes || '',
+          screeningRow?.rescreen_notes || ''
+        ].filter(n => n && n.trim() !== '').join('\n\n---\n\n'),
         // Screening data
         initial_screening_date: screeningRow?.initial_screening_date || null,
         was_absent: screeningRow?.was_absent ?? false,
@@ -519,11 +527,21 @@ router.get('/search/notes', async (req, res, next) => {
       };
     });
 
-    // Filter by hasNotes if specified
+    // Filter by hasNotes if specified (check all note fields)
     if (hasNotes === 'yes') {
-      results = results.filter(r => r.notes && r.notes.trim() !== '');
+      results = results.filter(r => {
+        const hasStudentNotes = r.notes && r.notes.trim() !== '';
+        const hasInitialNotes = r.initial_notes && r.initial_notes.trim() !== '';
+        const hasRescreenNotes = r.rescreen_notes && r.rescreen_notes.trim() !== '';
+        return hasStudentNotes || hasInitialNotes || hasRescreenNotes;
+      });
     } else if (hasNotes === 'no') {
-      results = results.filter(r => !r.notes || r.notes.trim() === '');
+      results = results.filter(r => {
+        const hasStudentNotes = r.notes && r.notes.trim() !== '';
+        const hasInitialNotes = r.initial_notes && r.initial_notes.trim() !== '';
+        const hasRescreenNotes = r.rescreen_notes && r.rescreen_notes.trim() !== '';
+        return !hasStudentNotes && !hasInitialNotes && !hasRescreenNotes;
+      });
     }
 
     res.json({

@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getScreeningData, updateScreening, getSchools } from '../api/client';
 import { getRowStatus, getRowColor, hasFailedTest, formatDate, formatDOB, formatTestResult, getVisionOverall, getHearingOverall } from '../utils/statusHelpers';
@@ -65,6 +66,19 @@ export default function Dashboard() {
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmMessage, setConfirmMessage] = useState('');
+
+  // Prevent body scroll when dialog is open
+  useEffect(() => {
+    if (showConfirmDialog) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    // Cleanup on unmount
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showConfirmDialog]);
 
   // Sorting state
   const [sortConfig, setSortConfig] = useState({
@@ -1691,10 +1705,25 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Confirmation Dialog */}
-      {showConfirmDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+      {/* Confirmation Dialog - Rendered via Portal to avoid layout shifts */}
+      {showConfirmDialog && createPortal(
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999]"
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 0 }}
+          onClick={(e) => {
+            // Close dialog if clicking the backdrop
+            if (e.target === e.currentTarget) {
+              setShowConfirmDialog(false);
+              setConfirmAction(null);
+              setConfirmMessage('');
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl"
+            style={{ position: 'relative', zIndex: 10000 }}
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Action</h3>
             <p className="text-gray-700 mb-6">{confirmMessage}</p>
             <div className="flex gap-3 justify-end">
@@ -1716,7 +1745,8 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

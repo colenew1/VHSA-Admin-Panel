@@ -691,53 +691,69 @@ router.get('/reporting', async (req, res, next) => {
       summary.totalStudents++;
       
       if (screening) {
-        // Vision
-        if (screening.vision_initial_right || screening.vision_initial_left || 
-            screening.vision_rescreen_right || screening.vision_rescreen_left) {
+        // Vision - check actual column names
+        const hasVisionData = screening.vision_initial_right_eye || screening.vision_initial_left_eye || 
+            screening.vision_rescreen_right_eye || screening.vision_rescreen_left_eye ||
+            screening.vision_overall;
+        if (hasVisionData) {
           gradeStats[grade].vision.screened++;
           summary.totalVision++;
           
-          // Check for fails (F in any vision field)
-          if (screening.vision_initial_right === 'F' || screening.vision_initial_left === 'F' ||
-              screening.vision_rescreen_right === 'F' || screening.vision_rescreen_left === 'F') {
+          // Check for fails (F or FAIL in vision_overall or any vision field)
+          const visionFailed = screening.vision_overall === 'F' || screening.vision_overall === 'FAIL' ||
+              (screening.vision_initial_result && (screening.vision_initial_result.toUpperCase() === 'F' || screening.vision_initial_result.toUpperCase() === 'FAIL')) ||
+              (screening.vision_rescreen_result && (screening.vision_rescreen_result.toUpperCase() === 'F' || screening.vision_rescreen_result.toUpperCase() === 'FAIL'));
+          if (visionFailed) {
             gradeStats[grade].vision.failed++;
           }
         }
         
-        // Glasses/Contacts
-        if (screening.glasses_or_contacts === 'Yes' || screening.glasses_or_contacts === true) {
+        // Glasses/Contacts - check actual column names
+        if (screening.vision_initial_glasses === 'Yes' || screening.vision_rescreen_glasses === 'Yes') {
           gradeStats[grade].glassesContacts++;
         }
         
-        // Hearing
-        if (screening.hearing_initial_right || screening.hearing_initial_left ||
-            screening.hearing_rescreen_right || screening.hearing_rescreen_left) {
+        // Hearing - check actual column names (check if any frequency has data)
+        const hasHearingData = screening.hearing_initial_right_1000 || screening.hearing_initial_right_2000 || 
+            screening.hearing_initial_right_4000 || screening.hearing_initial_left_1000 ||
+            screening.hearing_initial_left_2000 || screening.hearing_initial_left_4000 ||
+            screening.hearing_rescreen_right_1000 || screening.hearing_rescreen_right_2000 ||
+            screening.hearing_rescreen_right_4000 || screening.hearing_rescreen_left_1000 ||
+            screening.hearing_rescreen_left_2000 || screening.hearing_rescreen_left_4000 ||
+            screening.hearing_overall;
+        if (hasHearingData) {
           gradeStats[grade].hearing.screened++;
           summary.totalHearing++;
           
-          // Check for fails (F in any hearing field)
-          if (screening.hearing_initial_right === 'F' || screening.hearing_initial_left === 'F' ||
-              screening.hearing_rescreen_right === 'F' || screening.hearing_rescreen_left === 'F') {
+          // Check for fails (F or FAIL in hearing_overall or any hearing field)
+          const hearingFailed = screening.hearing_overall === 'F' || screening.hearing_overall === 'FAIL' ||
+              (screening.hearing_initial_result && (screening.hearing_initial_result.toUpperCase() === 'F' || screening.hearing_initial_result.toUpperCase() === 'FAIL')) ||
+              (screening.hearing_rescreen_result && (screening.hearing_rescreen_result.toUpperCase() === 'F' || screening.hearing_rescreen_result.toUpperCase() === 'FAIL'));
+          if (hearingFailed) {
             gradeStats[grade].hearing.failed++;
           }
         }
         
-        // Acanthosis
-        if (screening.acanthosis_initial || screening.acanthosis_rescreen) {
+        // Acanthosis - check actual column names
+        if (screening.acanthosis_initial_result || screening.acanthosis_rescreen_result) {
           gradeStats[grade].acanthosis.screened++;
           summary.totalAcanthosis++;
           
-          if (screening.acanthosis_initial === 'F' || screening.acanthosis_rescreen === 'F') {
+          const acanthosisFailed = (screening.acanthosis_initial_result && (screening.acanthosis_initial_result.toUpperCase() === 'F' || screening.acanthosis_initial_result.toUpperCase() === 'FAIL')) ||
+              (screening.acanthosis_rescreen_result && (screening.acanthosis_rescreen_result.toUpperCase() === 'F' || screening.acanthosis_rescreen_result.toUpperCase() === 'FAIL'));
+          if (acanthosisFailed) {
             gradeStats[grade].acanthosis.failed++;
           }
         }
         
-        // Scoliosis
-        if (screening.scoliosis_initial || screening.scoliosis_rescreen) {
+        // Scoliosis - check actual column names
+        if (screening.scoliosis_initial_result || screening.scoliosis_rescreen_result) {
           gradeStats[grade].scoliosis.screened++;
           summary.totalScoliosis++;
           
-          if (screening.scoliosis_initial === 'F' || screening.scoliosis_rescreen === 'F') {
+          const scoliosisFailed = (screening.scoliosis_initial_result && (screening.scoliosis_initial_result.toUpperCase() === 'F' || screening.scoliosis_initial_result.toUpperCase() === 'FAIL')) ||
+              (screening.scoliosis_rescreen_result && (screening.scoliosis_rescreen_result.toUpperCase() === 'F' || screening.scoliosis_rescreen_result.toUpperCase() === 'FAIL'));
+          if (scoliosisFailed) {
             gradeStats[grade].scoliosis.failed++;
           }
         }
