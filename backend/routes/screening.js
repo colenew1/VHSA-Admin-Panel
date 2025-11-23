@@ -433,7 +433,23 @@ router.put('/:unique_id', async (req, res, next) => {
     const filteredData = {};
     for (const [frontendKey, dbKey] of Object.entries(fieldMapping)) {
       if (updateData.hasOwnProperty(frontendKey) && dbKey !== null) {
-        filteredData[dbKey] = updateData[frontendKey];
+        let value = updateData[frontendKey];
+        
+        // Convert 'pass'/'fail' to 'P'/'F' for vision_overall and hearing_overall
+        // This ensures compatibility with the screening form that sends lowercase
+        if ((dbKey === 'vision_overall' || dbKey === 'hearing_overall') && value) {
+          const normalizedValue = value.toString().toLowerCase().trim();
+          if (normalizedValue === 'pass' || normalizedValue === 'p') {
+            value = 'P';
+          } else if (normalizedValue === 'fail' || normalizedValue === 'f') {
+            value = 'F';
+          } else {
+            // If it's already 'P' or 'F', keep it as is
+            value = value.toString().toUpperCase();
+          }
+        }
+        
+        filteredData[dbKey] = value;
       }
     }
 
