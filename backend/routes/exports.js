@@ -1490,21 +1490,21 @@ router.get('/students/export', async (req, res, next) => {
         'Vision Pass/Fail': visionFailed ? 'Fail' : (visionRight || visionLeft ? 'Pass' : ''),
         
         // Hearing Results
-        'Hearing Pass/Fail': hearingFailed ? 'Fail' : (screeningRow ? (
+        'Hearing Pass/Fail': hearingFailed ? 'Fail' : (screeningRow && (
           screeningRow.hearing_initial_right_1000 || screeningRow.hearing_initial_left_1000 ||
           screeningRow.hearing_rescreen_right_1000 || screeningRow.hearing_rescreen_left_1000
-        ) ? 'Pass' : '') : '',
+        )) ? 'Pass' : '',
         'Hearing Failure Details': hearingFailed ? getHearingFailureDetails(screeningRow) : '',
         
         // Acanthosis Results
-        'Acanthosis Pass/Fail': acanthosisFailed ? 'Fail' : (screeningRow ? (
+        'Acanthosis Pass/Fail': acanthosisFailed ? 'Fail' : (screeningRow && (
           screeningRow.acanthosis_initial_result || screeningRow.acanthosis_rescreen_result
-        ) ? 'Pass' : '') : '',
+        )) ? 'Pass' : '',
         
         // Scoliosis Results
-        'Scoliosis Pass/Fail': scoliosisFailed ? 'Fail' : (screeningRow ? (
+        'Scoliosis Pass/Fail': scoliosisFailed ? 'Fail' : (screeningRow && (
           screeningRow.scoliosis_initial_result || screeningRow.scoliosis_rescreen_result
-        ) ? 'Pass' : '') : ''
+        )) ? 'Pass' : ''
       };
     });
 
