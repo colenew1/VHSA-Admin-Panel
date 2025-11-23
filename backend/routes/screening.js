@@ -1,12 +1,6 @@
 import express from 'express';
 import { supabase } from '../config/database.js';
-import { 
-  isVisionComplete, 
-  isHearingComplete, 
-  isAcanthosisComplete, 
-  isScoliosisComplete,
-  areAllRequiredTestsComplete 
-} from '../utils/completionHelpers.js';
+import { areAllRequiredTestsComplete } from '../utils/completionHelpers.js';
 
 const router = express.Router();
 
@@ -250,14 +244,14 @@ router.get('/data', async (req, res, next) => {
         status_override: screeningRow?.status_override || null, // Manual status override
         // Vision - using correct field names (null if not screened)
         vision_required: screeningRow?.vision_required ?? false,
-        vision_complete: isVisionComplete(screeningRow), // Calculate based on actual field values
+        vision_complete: screeningRow?.vision_complete ?? false, // Use database's generated column
         vision_initial_right: screeningRow?.vision_initial_right_eye ?? null,
         vision_initial_left: screeningRow?.vision_initial_left_eye ?? null,
         vision_rescreen_right: screeningRow?.vision_rescreen_right_eye ?? null,
         vision_rescreen_left: screeningRow?.vision_rescreen_left_eye ?? null,
         // Hearing - all 12 frequency columns (1k, 2k, 4k for right/left, initial/rescreen)
         hearing_required: screeningRow?.hearing_required ?? false,
-        hearing_complete: isHearingComplete(screeningRow), // Calculate based on actual field values
+        hearing_complete: screeningRow?.hearing_complete ?? false, // Use database's generated column
         // Initial Right
         hearing_initial_right_1000: screeningRow?.hearing_initial_right_1000 ?? null,
         hearing_initial_right_2000: screeningRow?.hearing_initial_right_2000 ?? null,
@@ -276,12 +270,12 @@ router.get('/data', async (req, res, next) => {
         hearing_rescreen_left_4000: screeningRow?.hearing_rescreen_left_4000 ?? null,
         // Acanthosis - using correct field names
         acanthosis_required: screeningRow?.acanthosis_required ?? false,
-        acanthosis_complete: isAcanthosisComplete(screeningRow), // Calculate based on actual field values
+        acanthosis_complete: screeningRow?.acanthosis_complete ?? false, // Use database's generated column
         acanthosis_initial: screeningRow?.acanthosis_initial_result ?? null,
         acanthosis_rescreen: screeningRow?.acanthosis_rescreen_result ?? null,
         // Scoliosis - using correct field names
         scoliosis_required: screeningRow?.scoliosis_required ?? false,
-        scoliosis_complete: isScoliosisComplete(screeningRow), // Calculate based on actual field values
+        scoliosis_complete: screeningRow?.scoliosis_complete ?? false, // Use database's generated column
         scoliosis_initial: screeningRow?.scoliosis_initial_result ?? null,
         scoliosis_rescreen: screeningRow?.scoliosis_rescreen_result ?? null,
       };
@@ -299,32 +293,16 @@ router.get('/data', async (req, res, next) => {
     }
     if (status) {
       filteredData = filteredData.filter(row => {
-        // Recalculate completion status for filtering (using actual field values)
+        // Use the *_complete values already in the row data (from database)
         const allComplete = areAllRequiredTestsComplete({
           vision_required: row.vision_required,
           hearing_required: row.hearing_required,
           acanthosis_required: row.acanthosis_required,
           scoliosis_required: row.scoliosis_required,
-          vision_initial_right_eye: row.vision_initial_right,
-          vision_initial_left_eye: row.vision_initial_left,
-          vision_rescreen_right_eye: row.vision_rescreen_right,
-          vision_rescreen_left_eye: row.vision_rescreen_left,
-          hearing_initial_right_1000: row.hearing_initial_right_1000,
-          hearing_initial_right_2000: row.hearing_initial_right_2000,
-          hearing_initial_right_4000: row.hearing_initial_right_4000,
-          hearing_initial_left_1000: row.hearing_initial_left_1000,
-          hearing_initial_left_2000: row.hearing_initial_left_2000,
-          hearing_initial_left_4000: row.hearing_initial_left_4000,
-          hearing_rescreen_right_1000: row.hearing_rescreen_right_1000,
-          hearing_rescreen_right_2000: row.hearing_rescreen_right_2000,
-          hearing_rescreen_right_4000: row.hearing_rescreen_right_4000,
-          hearing_rescreen_left_1000: row.hearing_rescreen_left_1000,
-          hearing_rescreen_left_2000: row.hearing_rescreen_left_2000,
-          hearing_rescreen_left_4000: row.hearing_rescreen_left_4000,
-          acanthosis_initial_result: row.acanthosis_initial,
-          acanthosis_rescreen_result: row.acanthosis_rescreen,
-          scoliosis_initial_result: row.scoliosis_initial,
-          scoliosis_rescreen_result: row.scoliosis_rescreen
+          vision_complete: row.vision_complete,
+          hearing_complete: row.hearing_complete,
+          acanthosis_complete: row.acanthosis_complete,
+          scoliosis_complete: row.scoliosis_complete
         });
         
         if (status === 'completed') {
