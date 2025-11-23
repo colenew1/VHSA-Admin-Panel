@@ -23,14 +23,40 @@ router.post('/request-magic-link', async (req, res, next) => {
     console.log('📧 Received email:', email, '→ Normalized:', normalizedEmail);
     
     // Check if email exists in admin_users database
+    // Use maybeSingle() instead of single() to avoid errors when no record found
     const { data: adminUser, error: dbError } = await supabase
       .from('admin_users')
       .select('id, email, name, role, active')
       .eq('email', normalizedEmail)
-      .single();
+      .maybeSingle();
     
-    if (dbError || !adminUser) {
-      console.log('❌ Unauthorized login attempt:', normalizedEmail);
+    // Log the query result for debugging
+    console.log('🔍 Database query result:', {
+      found: !!adminUser,
+      error: dbError?.message,
+      email: normalizedEmail,
+      adminUser: adminUser ? { id: adminUser.id, name: adminUser.name, email: adminUser.email, active: adminUser.active } : null
+    });
+    
+    // Check for actual database errors (not just "not found")
+    if (dbError && dbError.code !== 'PGRST116') {
+      console.error('❌ Database error:', dbError);
+      return res.status(500).json({ 
+        error: 'Database error. Please try again.' 
+      });
+    }
+    
+    // If no user found or user doesn't exist
+    if (!adminUser) {
+      console.log('❌ Unauthorized login attempt - email not found:', normalizedEmail);
+      
+      // Debug: Check what emails exist in the database
+      const { data: allEmails } = await supabase
+        .from('admin_users')
+        .select('email, name')
+        .not('email', 'is', null);
+      console.log('📋 Available emails in database:', allEmails?.map(u => `${u.name}: ${u.email}`).join(', ') || 'none');
+      
       return res.status(403).json({ 
         error: 'Email address not authorized. Please contact administrator.' 
       });
