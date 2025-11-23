@@ -10,12 +10,15 @@ dotenv.config({ path: join(__dirname, '.env') });
 // NOW import everything else
 import express from 'express';
 import cors from 'cors';
+import authRoutes from './routes/auth.js';
 import dashboardRoutes from './routes/dashboard.js';
 import studentRoutes from './routes/students.js';
 import schoolRoutes from './routes/schools.js';
 import screenerRoutes from './routes/screeners.js';
+import adminUserRoutes from './routes/adminUsers.js';
 import exportRoutes from './routes/exports.js';
 import screeningRoutes from './routes/screening.js';
+import { authenticate } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 
 const app = express();
@@ -98,15 +101,21 @@ app.get('/', (req, res) => {
   });
 });
 
-// Routes
-app.use('/api/dashboard', dashboardRoutes);
-app.use('/api/students', studentRoutes);
-app.use('/api/schools', schoolRoutes);
-app.use('/api/screeners', screenerRoutes);
-app.use('/api/exports', exportRoutes);
-app.use('/api/screening', screeningRoutes);
+// Public routes (no authentication required)
+app.use('/api/auth', authRoutes);
 
-console.log('✓ Routes registered: /, /health, /api/dashboard, /api/students, /api/schools, /api/screeners, /api/exports, /api/screening');
+// Protected routes (require authentication)
+app.use('/api/dashboard', authenticate, dashboardRoutes);
+app.use('/api/students', authenticate, studentRoutes);
+app.use('/api/schools', authenticate, schoolRoutes);
+app.use('/api/screeners', authenticate, screenerRoutes);
+app.use('/api/admin-users', authenticate, adminUserRoutes);
+app.use('/api/exports', authenticate, exportRoutes);
+app.use('/api/screening', authenticate, screeningRoutes);
+
+console.log('✓ Routes registered:');
+console.log('  Public: /, /health, /api/auth/*');
+console.log('  Protected: /api/dashboard, /api/students, /api/schools, /api/screeners, /api/admin-users, /api/exports, /api/screening');
 
 // Health check
 app.get('/health', (req, res) => {

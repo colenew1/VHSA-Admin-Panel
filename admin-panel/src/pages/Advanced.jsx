@@ -1,30 +1,32 @@
 import { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSchools, createSchool, updateSchool, getScreeners, createScreener, updateScreener, deleteScreener } from '../api/client';
+import { getSchools, createSchool, updateSchool, getScreeners, createScreener, updateScreener, deleteScreener, getAdminUsers, createAdminUser, updateAdminUser, deleteAdminUser } from '../api/client';
 import api from '../api/client';
 
 /**
  * Advanced Settings Page - Master List Manager
  * 
- * This page is the MASTER LIST for managing schools and screeners.
- * All changes here directly update the 'schools' and 'screeners' tables in the database.
+ * This page is the MASTER LIST for managing schools, screeners, and admin users (phone numbers).
+ * All changes here directly update the database tables.
  * 
  * - Schools: Updates the 'schools' table (used by Dashboard, Import, Export, etc.)
  * - Screeners: Updates the 'screeners' table
+ * - Phone Numbers: Updates the 'admin_users' table (used for authentication)
  * 
  * When you edit/add/update here, it syncs with:
  * - Dashboard school dropdowns
  * - Import page school selection
- * - All other pages that use schools
+ * - Authentication system (phone numbers)
+ * - All other pages that use these tables
  */
 export default function Advanced() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('schools');
   const [editingId, setEditingId] = useState(null);
-  const [editingType, setEditingType] = useState(null); // 'schools' or 'screeners'
+  const [editingType, setEditingType] = useState(null); // 'schools', 'screeners', or 'phoneNumbers'
   const [unsavedChanges, setUnsavedChanges] = useState({});
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', active: true });
+  const [newItem, setNewItem] = useState({ name: '', active: true, phone_number: '' });
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmMessage, setConfirmMessage] = useState('');
@@ -54,8 +56,20 @@ export default function Advanced() {
     queryFn: () => getScreeners(),
   });
 
+  // Fetch admin users (phone numbers) - all, not just active
+  const { data: adminUsersData, isLoading: loadingAdminUsers } = useQuery({
+    queryKey: ['adminUsers', 'all'],
+    queryFn: async () => {
+      const response = await api.get('/admin-users', { params: { active: 'all' } });
+      const allAdminUsers = response.data?.adminUsers || [];
+      console.log('Fetched all admin users:', allAdminUsers.length, 'users');
+      return { adminUsers: allAdminUsers };
+    },
+  });
+
   const allSchools = schoolsData?.schools || [];
   const allScreeners = screenersData?.screeners || [];
+  const allAdminUsers = adminUsersData?.adminUsers || [];
   
   // Filter and sort schools/screeners - active ones always at top
   const schools = useMemo(() => {
@@ -123,6 +137,36 @@ export default function Advanced() {
     
     return filtered;
   }, [allScreeners, filters]);
+  
+  const phoneNumbers = useMemo(() => {
+    let filtered = [...allAdminUsers];
+    
+    // Filter by search (name or phone number)
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      filtered = filtered.filter(u => 
+        u.name?.toLowerCase().includes(searchLower) ||
+        u.phone_number?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Filter by active status
+    if (filters.activeStatus === 'active') {
+      filtered = filtered.filter(u => u.active === true);
+    } else if (filters.activeStatus === 'inactive') {
+      filtered = filtered.filter(u => u.active === false);
+    }
+    
+    // Sort: active first, then by name alphabetically
+    filtered.sort((a, b) => {
+      if (a.active !== b.active) {
+        return (b.active ? 1 : 0) - (a.active ? 1 : 0);
+      }
+      return a.name.localeCompare(b.name);
+    });
+    
+    return filtered;
+  }, [allAdminUsers, filters]);
 
   // Create mutations
   const createSchoolMutation = useMutation({
@@ -140,7 +184,17 @@ export default function Advanced() {
     onSuccess: () => {
       queryClient.invalidateQueries(['screeners']);
       setShowAddForm(false);
-      setNewItem({ name: '', active: true });
+      setNewItem({ name: '', active: true, phone_number: '' });
+    },
+  });
+
+  const createAdminUserMutation = useMutation({
+    mutationFn: createAdminUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['adminUsers']);
+      queryClient.invalidateQueries(['adminUsers', 'all']);
+      setShowAddForm(false);
+      setNewItem({ name: '', active: true, phone_number: '' });
     },
   });
 
@@ -241,7 +295,24 @@ export default function Advanced() {
     },
   });
 
-  // Delete mutation for screeners only (schools cannot be deleted)
+  const updateAdminUserMutation = useMutation({
+    mutationFn: ({ id, data }) => updateAdminUser(id, data),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries(['adminUsers']);
+      await queryClient.invalidateQueries(['adminUsers', 'all']);
+      await queryClient.refetchQueries(['adminUsers', 'all']);
+      setEditingId(null);
+      setEditingType(null);
+      setUnsavedChanges({});
+    },
+    onError: (error) => {
+      console.error('Error updating admin user:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to update admin user';
+      alert(`Error updating admin user: ${errorMessage}`);
+    },
+  });
+
+  // Delete mutations
   const deleteScreenerMutation = useMutation({
     mutationFn: deleteScreener,
     onSuccess: () => {
@@ -253,6 +324,21 @@ export default function Advanced() {
       console.error('Error deleting screener:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to delete screener';
       alert(`Error deleting screener: ${errorMessage}`);
+    },
+  });
+
+  const deleteAdminUserMutation = useMutation({
+    mutationFn: deleteAdminUser,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['adminUsers']);
+      queryClient.invalidateQueries(['adminUsers', 'all']);
+      setEditingId(null);
+      setEditingType(null);
+    },
+    onError: (error) => {
+      console.error('Error deleting admin user:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to delete admin user';
+      alert(`Error deleting admin user: ${errorMessage}`);
     },
   });
 
@@ -271,21 +357,27 @@ export default function Advanced() {
     setUnsavedChanges({});
   };
 
-  // Handle delete (screeners only - schools cannot be deleted)
+  // Handle delete (screeners and admin users - schools cannot be deleted)
   const handleDelete = (id, type) => {
-    // Only allow delete for screeners
-    if (type !== 'screeners') {
+    // Only allow delete for screeners and admin users
+    if (type !== 'screeners' && type !== 'phoneNumbers') {
       return;
     }
 
-    // Use allScreeners to find the item (not filtered screeners)
-    const item = allScreeners.find(s => s.id === id);
+    // Find the item
+    const item = type === 'screeners' 
+      ? allScreeners.find(s => s.id === id)
+      : allAdminUsers.find(u => u.id === id);
     
     if (!item) return;
 
     setConfirmMessage(`Are you sure you want to delete "${item.name}"? This action cannot be undone.`);
     setConfirmAction(() => {
-      deleteScreenerMutation.mutate(id);
+      if (type === 'screeners') {
+        deleteScreenerMutation.mutate(id);
+      } else if (type === 'phoneNumbers') {
+        deleteAdminUserMutation.mutate(id);
+      }
       setShowConfirmDialog(false);
     });
     setShowConfirmDialog(true);
@@ -309,7 +401,9 @@ export default function Advanced() {
     console.log('Changes:', changes);
     const item = type === 'schools' 
       ? schools.find(s => s.id === id)
-      : screeners.find(s => s.id === id);
+      : type === 'screeners'
+      ? screeners.find(s => s.id === id)
+      : phoneNumbers.find(u => u.id === id);
     
     if (!item) {
       console.error('Item not found for save:', id, type);
@@ -324,10 +418,16 @@ export default function Advanced() {
       active: changes.active !== undefined ? changes.active : item.active,
     };
 
+    // Add phone_number for admin users
+    if (type === 'phoneNumbers') {
+      updateData.phone_number = changes.phone_number !== undefined ? changes.phone_number : (item.phone_number || '');
+    }
+
     console.log('Update data:', updateData);
 
     // Always show confirmation dialog - let the user decide
-    setConfirmMessage(`Are you sure you want to update this ${type === 'schools' ? 'school' : 'screener'}?`);
+    const typeName = type === 'schools' ? 'school' : type === 'screeners' ? 'screener' : 'admin user';
+    setConfirmMessage(`Are you sure you want to update this ${typeName}?`);
     // Capture values in closure to ensure they're available when confirmAction is called
     const capturedId = id;
     const capturedType = type;
@@ -340,8 +440,10 @@ export default function Advanced() {
       setShowConfirmDialog(false);
       if (capturedType === 'schools') {
         updateSchoolMutation.mutate({ id: capturedId, data: capturedData });
-      } else {
+      } else if (capturedType === 'screeners') {
         updateScreenerMutation.mutate({ id: capturedId, data: capturedData });
+      } else if (capturedType === 'phoneNumbers') {
+        updateAdminUserMutation.mutate({ id: capturedId, data: capturedData });
       }
     });
     
@@ -358,25 +460,34 @@ export default function Advanced() {
       return;
     }
 
-    setConfirmMessage(`Are you sure you want to add this new ${activeTab === 'schools' ? 'school' : 'screener'}?`);
+    const typeName = activeTab === 'schools' ? 'school' : activeTab === 'screeners' ? 'screener' : 'admin user';
+    setConfirmMessage(`Are you sure you want to add this new ${typeName}?`);
     setConfirmAction(() => {
       if (activeTab === 'schools') {
         createSchoolMutation.mutate(newItem);
-      } else {
+      } else if (activeTab === 'screeners') {
         createScreenerMutation.mutate(newItem);
+      } else if (activeTab === 'phoneNumbers') {
+        createAdminUserMutation.mutate(newItem);
       }
       setShowConfirmDialog(false);
     });
     setShowConfirmDialog(true);
   };
 
-  // Render table for schools or screeners
+  // Render table for schools, screeners, or phone numbers
   const renderTable = (items, type) => {
-    const isLoading = type === 'schools' ? loadingSchools : loadingScreeners;
+    const isLoading = type === 'schools' ? loadingSchools 
+      : type === 'screeners' ? loadingScreeners 
+      : loadingAdminUsers;
     const isSaving = type === 'schools' 
       ? updateSchoolMutation.isLoading 
-      : updateScreenerMutation.isLoading;
-    const allItems = type === 'schools' ? allSchools : allScreeners;
+      : type === 'screeners'
+      ? updateScreenerMutation.isLoading
+      : updateAdminUserMutation.isLoading;
+    const allItems = type === 'schools' ? allSchools 
+      : type === 'screeners' ? allScreeners
+      : allAdminUsers;
 
     if (isLoading) {
       return <div className="text-center py-8 text-gray-600">Loading...</div>;
@@ -387,13 +498,13 @@ export default function Advanced() {
         {/* Header with Add Button */}
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-semibold text-gray-900 capitalize">
-            {type === 'schools' ? 'Schools' : 'Screeners'} ({items.length} of {allItems.length})
+            {type === 'schools' ? 'Schools' : type === 'screeners' ? 'Screeners' : 'Phone Numbers'} ({items.length} of {allItems.length})
           </h2>
           <button
             onClick={() => setShowAddForm(true)}
             className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
           >
-            Add New {type === 'schools' ? 'School' : 'Screener'}
+            Add New {type === 'schools' ? 'School' : type === 'screeners' ? 'Screener' : 'Phone Number'}
           </button>
         </div>
         
@@ -409,7 +520,7 @@ export default function Advanced() {
                 type="text"
                 value={filters.search}
                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                placeholder={`Search ${type === 'schools' ? 'schools' : 'screeners'}...`}
+                placeholder={`Search ${type === 'schools' ? 'schools' : type === 'screeners' ? 'screeners' : 'phone numbers'}...`}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
               />
             </div>
@@ -448,9 +559,9 @@ export default function Advanced() {
         {showAddForm && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Add New {type === 'schools' ? 'School' : 'Screener'}
+              Add New {type === 'schools' ? 'School' : type === 'screeners' ? 'Screener' : 'Phone Number'}
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className={`grid grid-cols-1 ${type === 'phoneNumbers' ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4`}>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Name <span className="text-red-500">*</span>
@@ -460,9 +571,24 @@ export default function Advanced() {
                   value={newItem.name}
                   onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                  placeholder={`Enter ${type === 'schools' ? 'school' : 'screener'} name`}
+                  placeholder={`Enter ${type === 'schools' ? 'school' : type === 'screeners' ? 'screener' : 'name'}`}
                 />
               </div>
+              {type === 'phoneNumbers' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={newItem.phone_number || ''}
+                    onChange={(e) => setNewItem({ ...newItem, phone_number: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                    placeholder="(512) 555-1234 or +15125551234"
+                  />
+                  <p className="mt-1 text-xs text-gray-500">Optional - can add later</p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Active (Enabled)
@@ -477,22 +603,24 @@ export default function Advanced() {
                 </select>
               </div>
               <div className="flex items-end gap-2">
-                <button
-                  onClick={handleAddItem}
-                  disabled={createSchoolMutation.isLoading || createScreenerMutation.isLoading}
-                  className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
-                >
-                  {createSchoolMutation.isLoading || createScreenerMutation.isLoading ? 'Adding...' : 'Add'}
-                </button>
-                <button
-                  onClick={() => {
-                    setShowAddForm(false);
-                    setNewItem({ name: '', active: true });
-                  }}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
-                >
-                  Cancel
-                </button>
+                <div className="flex items-end gap-2">
+                  <button
+                    onClick={handleAddItem}
+                    disabled={createSchoolMutation.isLoading || createScreenerMutation.isLoading || createAdminUserMutation.isLoading}
+                    className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
+                  >
+                    {createSchoolMutation.isLoading || createScreenerMutation.isLoading || createAdminUserMutation.isLoading ? 'Adding...' : 'Add'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddForm(false);
+                      setNewItem({ name: '', active: true, phone_number: '' });
+                    }}
+                    className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -504,6 +632,9 @@ export default function Advanced() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Name</th>
+                {type === 'phoneNumbers' && (
+                  <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Phone Number</th>
+                )}
                 <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Active (Enabled)</th>
                 <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
               </tr>
@@ -511,8 +642,8 @@ export default function Advanced() {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
-                    No {type === 'schools' ? 'schools' : 'screeners'} found
+                  <td colSpan={type === 'phoneNumbers' ? 4 : 3} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
+                    No {type === 'schools' ? 'schools' : type === 'screeners' ? 'screeners' : 'phone numbers'} found
                   </td>
                 </tr>
               ) : (
@@ -520,6 +651,7 @@ export default function Advanced() {
                   const isEditing = editingId === item.id && editingType === type;
                   const changes = unsavedChanges[item.id] || {};
                   const displayName = changes.name !== undefined ? changes.name : item.name;
+                  const displayPhone = changes.phone_number !== undefined ? changes.phone_number : (item.phone_number || '');
                   const displayActive = changes.active !== undefined ? changes.active : item.active;
 
                   return (
@@ -539,6 +671,23 @@ export default function Advanced() {
                           <span className={!item.active ? 'text-gray-400' : ''}>{item.name}</span>
                         )}
                       </td>
+                      {type === 'phoneNumbers' && (
+                        <td className="border border-gray-300 px-4 py-3">
+                          {isEditing ? (
+                            <input
+                              type="tel"
+                              value={displayPhone}
+                              onChange={(e) => handleCellChange(item.id, 'phone_number', e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                              placeholder="(512) 555-1234"
+                            />
+                          ) : (
+                            <span className={!item.phone_number ? 'text-gray-400 italic' : ''}>
+                              {item.phone_number || 'No phone number'}
+                            </span>
+                          )}
+                        </td>
+                      )}
                       <td className="border border-gray-300 px-4 py-3">
                         {isEditing ? (
                           <select
@@ -579,11 +728,11 @@ export default function Advanced() {
                             >
                               Cancel
                             </button>
-                            {/* Delete button - only show for screeners, not schools */}
-                            {type === 'screeners' && (
+                            {/* Delete button - show for screeners and phone numbers, not schools */}
+                            {(type === 'screeners' || type === 'phoneNumbers') && (
                               <button
                                 onClick={() => handleDelete(item.id, type)}
-                                disabled={isSaving || deleteScreenerMutation.isLoading}
+                                disabled={isSaving || deleteScreenerMutation.isLoading || deleteAdminUserMutation.isLoading}
                                 className="px-3 py-1 text-sm bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
                               >
                                 Delete
@@ -650,6 +799,21 @@ export default function Advanced() {
           >
             Screeners
           </button>
+          <button
+            onClick={() => {
+              setActiveTab('phoneNumbers');
+              setEditingId(null);
+              setEditingType(null);
+              setShowAddForm(false);
+            }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'phoneNumbers'
+                ? 'text-blue-600 border-blue-600'
+                : 'text-gray-600 border-transparent hover:text-gray-900 hover:border-gray-300'
+            }`}
+          >
+            Phone Numbers
+          </button>
         </nav>
       </div>
 
@@ -657,6 +821,7 @@ export default function Advanced() {
       <div>
         {activeTab === 'schools' && renderTable(schools, 'schools')}
         {activeTab === 'screeners' && renderTable(screeners, 'screeners')}
+        {activeTab === 'phoneNumbers' && renderTable(phoneNumbers, 'phoneNumbers')}
       </div>
 
       {/* Confirmation Dialog */}
@@ -706,3 +871,4 @@ export default function Advanced() {
     </div>
   );
 }
+

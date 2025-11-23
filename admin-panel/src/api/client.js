@@ -16,10 +16,54 @@ const api = axios.create({
   timeout: 30000, // 30 second timeout
 });
 
-// Add request interceptor for debugging
+// Add request interceptor to include auth token
 api.interceptors.request.use(
   (config) => {
-    console.log('📤 API Request:', config.method?.toUpperCase(), config.url);
+    // Get auth token from localStorage
+    const storedSession = localStorage.getItem('auth_session');
+    if (storedSession) {
+      try {
+        const session = JSON.parse(storedSession);
+        if (session.access_token) {
+          config.headers.Authorization = `Bearer ${session.access_token}`;
+        }
+      } catch (error) {
+        console.error('Error parsing auth session:', error);
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor to handle 401 errors (unauthorized)
+api.interceptors.response.use(
+  (response) => {
+    return response;
+  },
+  (error) => {
+    // If we get a 401, clear auth and redirect to login
+    if (error.response?.status === 401) {
+      localStorage.removeItem('auth_session');
+      localStorage.removeItem('auth_user');
+      // Redirect to login if we're not already there
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+// Add request interceptor for debugging (after auth interceptor)
+api.interceptors.request.use(
+  (config) => {
+    // Only log in development
+    if (import.meta.env.DEV) {
+      console.log('📤 API Request:', config.method?.toUpperCase(), config.url);
+    }
     return config;
   },
   (error) => {
@@ -109,6 +153,19 @@ export const updateScreener = (id, data) =>
 
 export const deleteScreener = (id) =>
   api.delete(`/screeners/${id}`).then(res => res.data);
+
+// Admin Users (Phone Numbers)
+export const getAdminUsers = (params) =>
+  api.get('/admin-users', { params }).then(res => res.data);
+
+export const createAdminUser = (data) =>
+  api.post('/admin-users', data).then(res => res.data);
+
+export const updateAdminUser = (id, data) =>
+  api.put(`/admin-users/${id}`, data).then(res => res.data);
+
+export const deleteAdminUser = (id) =>
+  api.delete(`/admin-users/${id}`).then(res => res.data);
 
 // Exports
 export const exportStateReport = (params) =>
