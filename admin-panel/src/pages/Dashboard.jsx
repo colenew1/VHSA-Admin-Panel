@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getScreeningData, updateScreening, getSchools } from '../api/client';
-import { getRowStatus, getRowColor, hasFailedTest, formatDate, formatDOB, formatTestResult } from '../utils/statusHelpers';
+import { getRowStatus, getRowColor, hasFailedTest, formatDate, formatDOB, formatTestResult, getVisionOverall, getHearingOverall } from '../utils/statusHelpers';
 import EditableCell from '../components/EditableCell';
 import AdvancedFilters from '../components/AdvancedFilters';
 import ColorLegend from '../components/ColorLegend';
@@ -86,10 +86,12 @@ export default function Dashboard() {
     glasses_contacts: '',
     screening_date: '',
     absent: '',
+    vision_overall: '',
     vision_initial_right: '',
     vision_initial_left: '',
     vision_rescreen_right: '',
     vision_rescreen_left: '',
+    hearing_overall: '',
     hearing_initial_right_1000: '',
     hearing_initial_right_2000: '',
     hearing_initial_right_4000: '',
@@ -263,6 +265,12 @@ export default function Dashboard() {
         }
       }
       // Vision filters
+      if (columnFilters.vision_overall) {
+        const overall = getVisionOverall(student);
+        if (!overall.toString().toLowerCase().includes(columnFilters.vision_overall.toLowerCase())) {
+          return false;
+        }
+      }
       if (columnFilters.vision_initial_right && !(student.vision_initial_right || '').toString().toLowerCase().includes(columnFilters.vision_initial_right.toLowerCase())) {
         return false;
       }
@@ -276,6 +284,12 @@ export default function Dashboard() {
         return false;
       }
       // Hearing filters
+      if (columnFilters.hearing_overall) {
+        const overall = getHearingOverall(student);
+        if (!overall.toString().toLowerCase().includes(columnFilters.hearing_overall.toLowerCase())) {
+          return false;
+        }
+      }
       const hearingFields = [
         'hearing_initial_right_1000', 'hearing_initial_right_2000', 'hearing_initial_right_4000',
         'hearing_initial_left_1000', 'hearing_initial_left_2000', 'hearing_initial_left_4000',
@@ -353,6 +367,12 @@ export default function Dashboard() {
         } else if (sortConfig.column === 'status_override') {
           aValue = a.status_override || '';
           bValue = b.status_override || '';
+        } else if (sortConfig.column === 'vision_overall') {
+          aValue = getVisionOverall(a);
+          bValue = getVisionOverall(b);
+        } else if (sortConfig.column === 'hearing_overall') {
+          aValue = getHearingOverall(a);
+          bValue = getHearingOverall(b);
         }
 
         // Handle null/undefined values
@@ -921,10 +941,10 @@ export default function Dashboard() {
                 <th colSpan={2} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
                   Screening Details
                 </th>
-                <th colSpan={4} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
+                <th colSpan={5} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
                   Vision Acuity
                 </th>
-                <th colSpan={12} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
+                <th colSpan={13} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
                   Hearing
                 </th>
                 <th colSpan={2} className="bg-gray-50 border-r-2 border-gray-300 px-3 py-2 text-sm font-bold text-gray-900" style={{ backgroundColor: '#f9fafb', margin: 0, padding: '8px 12px', borderBottom: 'none', borderTop: 'none' }}>
@@ -1011,7 +1031,27 @@ export default function Dashboard() {
                 {/* Screening Details */}
                 {renderSortableHeader('glasses_contacts', 'Glasses/Contacts', 'glasses_contacts')}
                 {renderSortableHeader('screening_date', 'Screening Date', 'screening_date')}
-                {/* Vision Sub-headers */}
+                {/* Vision Sub-headers - Overall first */}
+                <th className="bg-gray-50 border-b-2 border-r-2 border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '4px 8px', borderTop: '1px solid #e5e7eb' }}>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1 cursor-pointer hover:bg-gray-100 rounded px-1" onClick={() => handleSort('vision_overall')}>
+                      <span className="text-xs font-semibold">Overall</span>
+                      <div className="flex flex-col">
+                        <span className={`text-[8px] leading-none ${sortConfig.column === 'vision_overall' && sortConfig.direction === 'asc' ? 'text-blue-600 font-bold' : 'text-gray-400'}`}>▲</span>
+                        <span className={`text-[8px] leading-none ${sortConfig.column === 'vision_overall' && sortConfig.direction === 'desc' ? 'text-blue-600 font-bold' : 'text-gray-400'}`}>▼</span>
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={columnFilters.vision_overall || ''}
+                      onChange={(e) => handleColumnFilterChange('vision_overall', e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      placeholder="Filter..."
+                      className="w-full px-1 py-0.5 text-[10px] border border-gray-300 rounded"
+                      style={{ fontSize: '10px' }}
+                    />
+                  </div>
+                </th>
                 {renderSortableHeader('vision_initial_right', 'Init R', 'vision_initial_right')}
                 {renderSortableHeader('vision_initial_left', 'Init L', 'vision_initial_left')}
                 {renderSortableHeader('vision_rescreen_right', 'Rescreen R', 'vision_rescreen_right')}
@@ -1028,6 +1068,27 @@ export default function Dashboard() {
                       type="text"
                       value={columnFilters.vision_rescreen_left}
                       onChange={(e) => handleColumnFilterChange('vision_rescreen_left', e.target.value)}
+                      onClick={(e) => e.stopPropagation()}
+                      placeholder="Filter..."
+                      className="w-full px-1 py-0.5 text-[10px] border border-gray-300 rounded"
+                      style={{ fontSize: '10px' }}
+                    />
+                  </div>
+                </th>
+                {/* Hearing Sub-headers - Overall first */}
+                <th className="bg-gray-50 border-b-2 border-r-2 border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 text-left" style={{ minWidth: '70px', backgroundColor: '#f9fafb', margin: 0, padding: '4px 8px', borderTop: '1px solid #e5e7eb' }}>
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1 cursor-pointer hover:bg-gray-100 rounded px-1" onClick={() => handleSort('hearing_overall')}>
+                      <span className="text-xs font-semibold">Overall</span>
+                      <div className="flex flex-col">
+                        <span className={`text-[8px] leading-none ${sortConfig.column === 'hearing_overall' && sortConfig.direction === 'asc' ? 'text-blue-600 font-bold' : 'text-gray-400'}`}>▲</span>
+                        <span className={`text-[8px] leading-none ${sortConfig.column === 'hearing_overall' && sortConfig.direction === 'desc' ? 'text-blue-600 font-bold' : 'text-gray-400'}`}>▼</span>
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={columnFilters.hearing_overall || ''}
+                      onChange={(e) => handleColumnFilterChange('hearing_overall', e.target.value)}
                       onClick={(e) => e.stopPropagation()}
                       placeholder="Filter..."
                       className="w-full px-1 py-0.5 text-[10px] border border-gray-300 rounded"
@@ -1306,6 +1367,13 @@ export default function Dashboard() {
                       />
                     </td>
                     
+                    {/* Vision Overall */}
+                    <td className="border-r border-gray-200 px-3 py-3">
+                      <div className="text-sm text-center font-bold">
+                        {formatTestResult(getVisionOverall(displayData))}
+                      </div>
+                    </td>
+                    
                     {/* Vision Results */}
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
@@ -1346,6 +1414,13 @@ export default function Dashboard() {
                         className="text-sm text-center font-medium"
                         disabled={!isEditing}
                       />
+                    </td>
+                    
+                    {/* Hearing Overall */}
+                    <td className="border-r border-gray-200 px-3 py-3">
+                      <div className="text-sm text-center font-bold">
+                        {formatTestResult(getHearingOverall(displayData))}
+                      </div>
                     </td>
                     
                     {/* Hearing Results - Initial Right (1k, 2k, 4k) */}
