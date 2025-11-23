@@ -91,10 +91,17 @@ router.post('/request-magic-link', async (req, res, next) => {
     }
     
     // Email is authorized - send magic link via Supabase
-    // Get the redirect URL from request or use default
     // The redirect URL should point to the backend callback endpoint
-    const backendUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+    // IMPORTANT: This URL must also be whitelisted in Supabase Dashboard:
+    // Authentication → URL Configuration → Redirect URLs
+    const backendUrl = process.env.BACKEND_URL || 
+                       (process.env.NODE_ENV === 'production' 
+                         ? process.env.RENDER_EXTERNAL_URL || 'https://vhsa-admin-panel-backend.onrender.com'
+                         : `${req.protocol}://${req.get('host')}`);
     const redirectTo = req.body.redirectTo || `${backendUrl}/api/auth/callback`;
+    
+    console.log('🔗 Magic link redirect URL:', redirectTo);
+    console.log('   Make sure this URL is whitelisted in Supabase Dashboard → Authentication → URL Configuration');
     
     console.log('📧 Sending magic link to authorized user:', adminUser.name, normalizedEmail);
     const { data, error } = await supabaseAuth.auth.signInWithOtp({
@@ -168,8 +175,12 @@ router.get('/callback', async (req, res, next) => {
           
           // Redirect to frontend with session tokens
           // Frontend will extract tokens from URL and store them
-          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+          const frontendUrl = process.env.FRONTEND_URL || 
+                              (process.env.NODE_ENV === 'production'
+                                ? 'https://vhsa-admin-panel.netlify.app'
+                                : 'http://localhost:5173');
           const redirectUrl = new URL('/auth/callback', frontendUrl);
+          console.log('🔗 Redirecting to frontend:', redirectUrl.toString());
           redirectUrl.searchParams.set('access_token', data.session.access_token);
           redirectUrl.searchParams.set('refresh_token', data.session.refresh_token);
           redirectUrl.searchParams.set('expires_at', data.session.expires_at);
