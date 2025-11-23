@@ -9,6 +9,22 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
 
+// Helper function to normalize phone number
+function normalizePhoneNumber(phone) {
+  if (!phone) return null;
+  // Remove all non-digit characters except +
+  let cleaned = phone.replace(/[^\d+]/g, '');
+  // If it doesn't start with +, add +1 for US numbers
+  if (!cleaned.startsWith('+')) {
+    // Remove leading 1 if present (US country code)
+    if (cleaned.startsWith('1') && cleaned.length === 11) {
+      cleaned = cleaned.substring(1);
+    }
+    cleaned = `+1${cleaned}`;
+  }
+  return cleaned;
+}
+
 // Request OTP via SMS - Check database first
 router.post('/request-otp', async (req, res, next) => {
   try {
@@ -18,18 +34,48 @@ router.post('/request-otp', async (req, res, next) => {
       return res.status(400).json({ error: 'Phone number is required' });
     }
     
-    // Format phone number (must include country code, e.g., +1234567890)
-    const formattedPhone = phone.startsWith('+') ? phone : `+1${phone}`;
+    // Normalize phone number (remove formatting, ensure +1XXXXXXXXXX format)
+    const formattedPhone = normalizePhoneNumber(phone);
+    console.log('📞 Received phone:', phone, '→ Formatted:', formattedPhone);
     
     // Check if phone number exists in admin_users database
-    const { data: adminUser, error: dbError } = await supabase
+    // Try exact match first
+    let { data: adminUser, error: dbError } = await supabase
       .from('admin_users')
       .select('id, phone_number, name, role, active')
       .eq('phone_number', formattedPhone)
       .single();
     
+    let allUsers = null;
+    
+    // If not found, try to find by normalizing database phone numbers
     if (dbError || !adminUser) {
+      console.log('⚠️  Exact match not found, checking all admin users...');
+      const { data: allUsersData, error: allUsersError } = await supabase
+        .from('admin_users')
+        .select('id, phone_number, name, role, active');
+      
+      if (!allUsersError && allUsersData) {
+        allUsers = allUsersData;
+        // Find user by normalizing their phone numbers
+        adminUser = allUsers.find(user => {
+          if (!user.phone_number) return false;
+          const normalized = normalizePhoneNumber(user.phone_number);
+          return normalized === formattedPhone;
+        });
+        
+        if (adminUser) {
+          console.log('✅ Found user by normalized phone:', adminUser.name);
+        }
+      }
+    }
+    
+    if (!adminUser) {
       console.log('❌ Unauthorized login attempt:', formattedPhone);
+      if (allUsers) {
+        console.log('   Available phone numbers in database:', 
+          allUsers.map(u => `${u.name}: ${u.phone_number || 'NULL'}`).join(', '));
+      }
       return res.status(403).json({ 
         error: 'Phone number not authorized. Please contact administrator.' 
       });
@@ -37,7 +83,7 @@ router.post('/request-otp', async (req, res, next) => {
     
     // Check if user is active
     if (!adminUser.active) {
-      console.log('❌ Inactive account login attempt:', formattedPhone);
+      console.log('❌ Inactive account login attempt:', formattedPhone, adminUser.name);
       return res.status(403).json({ 
         error: 'Your account has been deactivated. Please contact administrator.' 
       });
@@ -51,8 +97,17 @@ router.post('/request-otp', async (req, res, next) => {
     
     if (error) {
       console.error('❌ Error sending OTP:', error);
-      return res.status(400).json({ error: error.message });
+      console.error('   Error details:', JSON.stringify(error, null, 2));
+      return res.status(400).json({ 
+        error: error.message || 'Failed to send OTP. Please check your phone number and try again.' 
+      });
     }
+    
+    console.log('✅ OTP request successful. Supabase response:', {
+      message: data?.message,
+      hasData: !!data,
+      hasUser: !!data?.user
+    });
     
     res.json({ 
       success: true, 
@@ -64,6 +119,7 @@ router.post('/request-otp', async (req, res, next) => {
       }
     });
   } catch (error) {
+    console.error('❌ Unexpected error in request-otp:', error);
     next(error);
   }
 });
@@ -77,7 +133,8 @@ router.post('/verify-otp', async (req, res, next) => {
       return res.status(400).json({ error: 'Phone number and OTP token are required' });
     }
     
-    const formattedPhone = phone.startsWith('+') ? phone : `+1${phone}`;
+    const formattedPhone = normalizePhoneNumber(phone);
+    console.log('🔐 Verifying OTP for phone:', formattedPhone);
     
     // Verify OTP with Supabase
     const { data, error } = await supabaseAuth.auth.verifyOtp({

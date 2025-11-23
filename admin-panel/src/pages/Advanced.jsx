@@ -26,7 +26,7 @@ export default function Advanced() {
   const [editingType, setEditingType] = useState(null); // 'schools', 'screeners', or 'phoneNumbers'
   const [unsavedChanges, setUnsavedChanges] = useState({});
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', active: true, phone_number: '' });
+  const [newItem, setNewItem] = useState({ name: '', active: true, admin: true, phone_number: '' });
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmMessage, setConfirmMessage] = useState('');
@@ -175,7 +175,7 @@ export default function Advanced() {
       queryClient.invalidateQueries(['schools']);
       queryClient.invalidateQueries(['schools', 'all']);
       setShowAddForm(false);
-      setNewItem({ name: '', active: true });
+      setNewItem({ name: '', active: true, admin: true, phone_number: '' });
     },
   });
 
@@ -418,9 +418,10 @@ export default function Advanced() {
       active: changes.active !== undefined ? changes.active : item.active,
     };
 
-    // Add phone_number for admin users
+    // Add phone_number and admin for admin users
     if (type === 'phoneNumbers') {
       updateData.phone_number = changes.phone_number !== undefined ? changes.phone_number : (item.phone_number || '');
+      updateData.admin = changes.admin !== undefined ? changes.admin : item.admin;
     }
 
     console.log('Update data:', updateData);
@@ -561,7 +562,7 @@ export default function Advanced() {
             <h3 className="text-lg font-semibold text-gray-900 mb-3">
               Add New {type === 'schools' ? 'School' : type === 'screeners' ? 'Screener' : 'Phone Number'}
             </h3>
-            <div className={`grid grid-cols-1 ${type === 'phoneNumbers' ? 'md:grid-cols-4' : 'md:grid-cols-3'} gap-4`}>
+            <div className={`grid grid-cols-1 ${type === 'phoneNumbers' ? 'md:grid-cols-5' : 'md:grid-cols-3'} gap-4`}>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Name <span className="text-red-500">*</span>
@@ -602,6 +603,21 @@ export default function Advanced() {
                   <option value="false">No (Hidden)</option>
                 </select>
               </div>
+              {type === 'phoneNumbers' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Admin
+                  </label>
+                  <select
+                    value={newItem.admin ? 'true' : 'false'}
+                    onChange={(e) => setNewItem({ ...newItem, admin: e.target.value === 'true' })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                  >
+                    <option value="true">Yes (Admin privileges)</option>
+                    <option value="false">No (Regular user)</option>
+                  </select>
+                </div>
+              )}
               <div className="flex items-end gap-2">
                 <div className="flex items-end gap-2">
                   <button
@@ -614,7 +630,7 @@ export default function Advanced() {
                   <button
                     onClick={() => {
                       setShowAddForm(false);
-                      setNewItem({ name: '', active: true, phone_number: '' });
+                      setNewItem({ name: '', active: true, admin: true, phone_number: '' });
                     }}
                     className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
                   >
@@ -636,13 +652,16 @@ export default function Advanced() {
                   <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Phone Number</th>
                 )}
                 <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Active (Enabled)</th>
+                {type === 'phoneNumbers' && (
+                  <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Admin</th>
+                )}
                 <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={type === 'phoneNumbers' ? 4 : 3} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
+                  <td colSpan={type === 'phoneNumbers' ? 5 : 3} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
                     No {type === 'schools' ? 'schools' : type === 'screeners' ? 'screeners' : 'phone numbers'} found
                   </td>
                 </tr>
@@ -653,6 +672,7 @@ export default function Advanced() {
                   const displayName = changes.name !== undefined ? changes.name : item.name;
                   const displayPhone = changes.phone_number !== undefined ? changes.phone_number : (item.phone_number || '');
                   const displayActive = changes.active !== undefined ? changes.active : item.active;
+                  const displayAdmin = changes.admin !== undefined ? changes.admin : item.admin;
 
                   return (
                     <tr 
@@ -708,6 +728,28 @@ export default function Advanced() {
                           </span>
                         )}
                       </td>
+                      {type === 'phoneNumbers' && (
+                        <td className="border border-gray-300 px-4 py-3">
+                          {isEditing ? (
+                            <select
+                              value={displayAdmin ? 'true' : 'false'}
+                              onChange={(e) => handleCellChange(item.id, 'admin', e.target.value === 'true')}
+                              className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
+                            >
+                              <option value="true">Yes (Admin privileges)</option>
+                              <option value="false">No (Regular user)</option>
+                            </select>
+                          ) : (
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              displayAdmin 
+                                ? 'bg-blue-100 text-blue-800' 
+                                : 'bg-gray-100 text-gray-600'
+                            }`}>
+                              {displayAdmin ? 'Yes' : 'No'}
+                            </span>
+                          )}
+                        </td>
+                      )}
                       <td className="border border-gray-300 px-4 py-3">
                         {isEditing ? (
                           <div className="flex gap-2">

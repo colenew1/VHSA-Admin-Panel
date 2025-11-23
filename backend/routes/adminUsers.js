@@ -39,7 +39,7 @@ router.get('/', async (req, res, next) => {
 // Create new admin user
 router.post('/', async (req, res, next) => {
   try {
-    const { name, phone_number, active = true } = req.body;
+    const { name, phone_number, active = true, admin = true } = req.body;
     
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
@@ -85,7 +85,8 @@ router.post('/', async (req, res, next) => {
       .insert({ 
         name: name.trim(), 
         phone_number: formattedPhone,
-        active 
+        active,
+        admin
       })
       .select()
       .single();
@@ -106,7 +107,7 @@ router.post('/', async (req, res, next) => {
 router.put('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, phone_number, active } = req.body;
+    const { name, phone_number, active, admin } = req.body;
     
     console.log('Update admin user request:', { id, name, phone_number, active, body: req.body });
     
@@ -168,6 +169,7 @@ router.put('/:id', async (req, res, next) => {
       name: name.trim(),
       phone_number: formattedPhone,
       active: active !== undefined ? active : existing.active,
+      admin: admin !== undefined ? admin : existing.admin,
       updated_at: new Date().toISOString()
     };
     
