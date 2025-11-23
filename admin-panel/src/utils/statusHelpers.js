@@ -46,11 +46,32 @@ export function getComputedStatus(student) {
   }
 
   // Check if all required tests are complete
-  const allComplete = 
-    (!student.vision_required || student.vision_complete) &&
-    (!student.hearing_required || student.hearing_complete) &&
-    (!student.acanthosis_required || student.acanthosis_complete) &&
-    (!student.scoliosis_required || student.scoliosis_complete);
+  // Use the database's *_complete columns which check if all fields are filled
+  // A student is only complete if ALL required tests (based on grade) are complete
+  const visionComplete = !student.vision_required || (student.vision_complete === true);
+  const hearingComplete = !student.hearing_required || (student.hearing_complete === true);
+  const acanthosisComplete = !student.acanthosis_required || (student.acanthosis_complete === true);
+  const scoliosisComplete = !student.scoliosis_required || (student.scoliosis_complete === true);
+
+  const allComplete = visionComplete && hearingComplete && acanthosisComplete && scoliosisComplete;
+
+  // Debug logging (only in development)
+  if (typeof window !== 'undefined' && import.meta.env?.DEV && Math.random() < 0.01) {
+    console.log('Status calculation:', {
+      unique_id: student.unique_id,
+      grade: student.grade,
+      vision_required: student.vision_required,
+      vision_complete: student.vision_complete,
+      hearing_required: student.hearing_required,
+      hearing_complete: student.hearing_complete,
+      acanthosis_required: student.acanthosis_required,
+      acanthosis_complete: student.acanthosis_complete,
+      scoliosis_required: student.scoliosis_required,
+      scoliosis_complete: student.scoliosis_complete,
+      allComplete,
+      status: allComplete ? 'completed' : 'incomplete'
+    });
+  }
 
   if (allComplete) {
     return 'completed';

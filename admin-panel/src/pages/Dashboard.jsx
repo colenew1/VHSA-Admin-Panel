@@ -130,10 +130,29 @@ export default function Dashboard() {
   }, []); // Only run on mount
 
   // Fetch screening data - only when search has been triggered
+  // Exclude status checkboxes from queryKey to prevent refetch when clicking status bubbles
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['screening', filters, pageSize, currentPage],
+    queryKey: ['screening', 
+      filters.school, 
+      filters.startDate, 
+      filters.endDate, 
+      filters.year,
+      filters.grade,
+      filters.gender,
+      filters.returning,
+      filters.status, // Only the main status filter, not the checkboxes
+      pageSize, 
+      currentPage
+    ],
     queryFn: () => getScreeningData({
-      ...filters,
+      school: filters.school,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      year: filters.year,
+      grade: filters.grade,
+      gender: filters.gender,
+      returning: filters.returning,
+      status: filters.status,
       limit: pageSize,
       offset: currentPage * pageSize,
     }),
