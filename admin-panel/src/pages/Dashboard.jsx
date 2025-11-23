@@ -181,28 +181,28 @@ export default function Dashboard() {
     // Filter by status checkboxes - only apply if search has been triggered
     // This allows users to select multiple statuses before clicking Search
     if (hasSearched) {
-      filtered = filtered.filter(student => {
-        const status = getRowStatus(student);
-        const failed = hasFailedTest(student);
-        
-        // Check if student has failed tests
-        if (failed && !filters.statusFailed) {
-          return false;
-        }
-        
-        switch (status) {
-          case 'not_started':
-            return filters.statusNotStarted;
-          case 'completed':
-            return filters.statusCompleted;
-          case 'incomplete':
-            return filters.statusIncomplete;
-          case 'absent':
-            return filters.statusAbsent;
-          default:
-            return true;
-        }
-      });
+    filtered = filtered.filter(student => {
+      const status = getRowStatus(student);
+      const failed = hasFailedTest(student);
+      
+      // Check if student has failed tests
+      if (failed && !filters.statusFailed) {
+        return false;
+      }
+      
+      switch (status) {
+        case 'not_started':
+          return filters.statusNotStarted;
+        case 'completed':
+          return filters.statusCompleted;
+        case 'incomplete':
+          return filters.statusIncomplete;
+        case 'absent':
+          return filters.statusAbsent;
+        default:
+          return true;
+      }
+    });
     }
 
     // Apply column filters
@@ -1370,7 +1370,7 @@ export default function Dashboard() {
                     {/* Vision Overall */}
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
-                        value={displayData.vision_overall || ''}
+                        value={isEditing ? (displayData.vision_overall || '') : formatTestResult(displayData.vision_overall)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'vision_overall', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
@@ -1424,7 +1424,7 @@ export default function Dashboard() {
                     {/* Hearing Overall */}
                     <td className="border-r border-gray-200 px-3 py-3">
                       <EditableCell
-                        value={displayData.hearing_overall || ''}
+                        value={isEditing ? (displayData.hearing_overall || '') : formatTestResult(displayData.hearing_overall)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_overall', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}

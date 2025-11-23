@@ -156,15 +156,23 @@ export function getRowColor(status) {
 }
 
 /**
- * Format test result for display (P/F)
- * @param {string} result - Test result value
- * @returns {string} - Formatted display value
+ * Format test result for display (PASS/FAIL)
+ * @param {string} result - Test result value (P/F or pass/fail)
+ * @returns {string} - Formatted display value (PASS/FAIL)
  */
 export function formatTestResult(result) {
   if (result === null || result === undefined || result === '') {
     return '';
   }
-  return result.toString().toUpperCase();
+  const normalized = result.toString().toUpperCase().trim();
+  if (normalized === 'P' || normalized === 'PASS') {
+    return 'PASS';
+  }
+  if (normalized === 'F' || normalized === 'FAIL') {
+    return 'FAIL';
+  }
+  // For other values (like acuity scores), return as-is
+  return result.toString();
 }
 
 /**
