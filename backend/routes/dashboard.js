@@ -1,5 +1,6 @@
 import express from 'express';
 import { supabase } from '../config/database.js';
+import { areAllRequiredTestsComplete } from '../utils/completionHelpers.js';
 
 const router = express.Router();
 
@@ -9,7 +10,7 @@ router.get('/', async (req, res, next) => {
     
     console.log('📊 Dashboard query:', { school, startDate, endDate });
     
-    // Build query
+    // Build query - fetch ALL field values needed to calculate completion
     let query = supabase
       .from('screening_results')
       .select(`
@@ -20,11 +21,27 @@ router.get('/', async (req, res, next) => {
         hearing_required,
         acanthosis_required,
         scoliosis_required,
-        vision_complete,
-        hearing_complete,
-        acanthosis_complete,
-        scoliosis_complete,
-        initial_screening_date
+        initial_screening_date,
+        vision_initial_right_eye,
+        vision_initial_left_eye,
+        vision_rescreen_right_eye,
+        vision_rescreen_left_eye,
+        hearing_initial_right_1000,
+        hearing_initial_right_2000,
+        hearing_initial_right_4000,
+        hearing_initial_left_1000,
+        hearing_initial_left_2000,
+        hearing_initial_left_4000,
+        hearing_rescreen_right_1000,
+        hearing_rescreen_right_2000,
+        hearing_rescreen_right_4000,
+        hearing_rescreen_left_1000,
+        hearing_rescreen_left_2000,
+        hearing_rescreen_left_4000,
+        acanthosis_initial_result,
+        acanthosis_rescreen_result,
+        scoliosis_initial_result,
+        scoliosis_rescreen_result
       `);
     
     if (startDate) query = query.gte('initial_screening_date', startDate);
@@ -57,12 +74,8 @@ router.get('/', async (req, res, next) => {
         return;
       }
       
-      // Check if all required tests are complete
-      const allComplete = 
-        (!student.vision_required || student.vision_complete) &&
-        (!student.hearing_required || student.hearing_complete) &&
-        (!student.acanthosis_required || student.acanthosis_complete) &&
-        (!student.scoliosis_required || student.scoliosis_complete);
+      // Calculate completion status based on actual field values
+      const allComplete = areAllRequiredTestsComplete(student);
       
       if (allComplete) {
         stats.completed++;
