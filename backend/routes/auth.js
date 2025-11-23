@@ -23,39 +23,51 @@ router.post('/request-magic-link', async (req, res, next) => {
     console.log('📧 Received email:', email, '→ Normalized:', normalizedEmail);
     
     // Check if email exists in admin_users database
-    // Use maybeSingle() instead of single() to avoid errors when no record found
+    // Use maybeSingle() - returns null data (not error) when no record found
     const { data: adminUser, error: dbError } = await supabase
       .from('admin_users')
-      .select('id, email, name, role, active')
+      .select('id, email, name, admin, active')
       .eq('email', normalizedEmail)
       .maybeSingle();
     
     // Log the query result for debugging
     console.log('🔍 Database query result:', {
       found: !!adminUser,
-      error: dbError?.message,
+      hasError: !!dbError,
+      errorCode: dbError?.code,
+      errorMessage: dbError?.message,
       email: normalizedEmail,
       adminUser: adminUser ? { id: adminUser.id, name: adminUser.name, email: adminUser.email, active: adminUser.active } : null
     });
     
-    // Check for actual database errors (not just "not found")
-    if (dbError && dbError.code !== 'PGRST116') {
-      console.error('❌ Database error:', dbError);
+    // If there's an actual database error (connection, RLS, etc.)
+    if (dbError) {
+      console.error('❌ Database error:', {
+        code: dbError.code,
+        message: dbError.message,
+        details: dbError.details,
+        hint: dbError.hint
+      });
       return res.status(500).json({ 
         error: 'Database error. Please try again.' 
       });
     }
     
-    // If no user found or user doesn't exist
+    // If no user found (maybeSingle returns null data, no error)
     if (!adminUser) {
       console.log('❌ Unauthorized login attempt - email not found:', normalizedEmail);
       
       // Debug: Check what emails exist in the database
-      const { data: allEmails } = await supabase
+      const { data: allEmails, error: debugError } = await supabase
         .from('admin_users')
         .select('email, name')
         .not('email', 'is', null);
-      console.log('📋 Available emails in database:', allEmails?.map(u => `${u.name}: ${u.email}`).join(', ') || 'none');
+      
+      if (debugError) {
+        console.error('❌ Error fetching email list:', debugError);
+      } else {
+        console.log('📋 Available emails in database:', allEmails?.map(u => `${u.name}: ${u.email}`).join(', ') || 'none');
+      }
       
       return res.status(403).json({ 
         error: 'Email address not authorized. Please contact administrator.' 
@@ -67,6 +79,14 @@ router.post('/request-magic-link', async (req, res, next) => {
       console.log('❌ Inactive account login attempt:', normalizedEmail, adminUser.name);
       return res.status(403).json({ 
         error: 'Your account has been deactivated. Please contact administrator.' 
+      });
+    }
+    
+    // Check if user is an admin (only admins can access admin panel)
+    if (!adminUser.admin) {
+      console.log('❌ Non-admin login attempt:', normalizedEmail, adminUser.name);
+      return res.status(403).json({ 
+        error: 'Access denied. Admin privileges required.' 
       });
     }
     
@@ -103,7 +123,7 @@ router.post('/request-magic-link', async (req, res, next) => {
       // Optionally return user info (without sensitive data)
       user: {
         name: adminUser.name,
-        role: adminUser.role
+        admin: adminUser.admin
       }
     });
   } catch (error) {
@@ -132,14 +152,19 @@ router.get('/callback', async (req, res, next) => {
       if (data.session && data.user) {
         // Get admin user info from database
         const normalizedEmail = email?.toLowerCase().trim();
-        const { data: adminUser } = await supabase
+        const { data: adminUser, error: callbackError } = await supabase
           .from('admin_users')
-          .select('id, email, name, role, active')
+          .select('id, email, name, admin, active')
           .eq('email', normalizedEmail)
-          .single();
+          .maybeSingle();
         
-        if (adminUser && adminUser.active) {
-          console.log('✅ User authenticated via magic link:', adminUser.name, normalizedEmail);
+        if (callbackError) {
+          console.error('❌ Error fetching user in callback:', callbackError);
+          return res.redirect(`/?error=${encodeURIComponent('Database error')}`);
+        }
+        
+        if (adminUser && adminUser.active && adminUser.admin) {
+          console.log('✅ Admin user authenticated via magic link:', adminUser.name, normalizedEmail);
           
           // Redirect to frontend with session tokens
           // Frontend will extract tokens from URL and store them
@@ -151,7 +176,7 @@ router.get('/callback', async (req, res, next) => {
           
           return res.redirect(redirectUrl.toString());
         } else {
-          return res.redirect(`/?error=${encodeURIComponent('User not found or inactive')}`);
+          return res.redirect(`/?error=${encodeURIComponent('Access denied. Admin privileges required.')}`);
         }
       }
     }
@@ -183,7 +208,7 @@ router.post('/verify-session', async (req, res, next) => {
     const normalizedEmail = user.email?.toLowerCase().trim();
     const { data: adminUser } = await supabase
       .from('admin_users')
-      .select('id, email, name, role, active')
+      .select('id, email, name, admin, active')
       .eq('email', normalizedEmail)
       .single();
     
@@ -208,7 +233,7 @@ router.post('/verify-session', async (req, res, next) => {
         id: adminUser.id,
         email: normalizedEmail,
         name: adminUser.name,
-        role: adminUser.role,
+        admin: adminUser.admin,
         supabase_user_id: user.id
       },
     });
@@ -237,14 +262,19 @@ router.get('/me', async (req, res, next) => {
     
     // Get admin user info from database
     const normalizedEmail = user.email?.toLowerCase().trim();
-    const { data: adminUser } = await supabase
+    const { data: adminUser, error: meError } = await supabase
       .from('admin_users')
-      .select('id, email, name, role, active')
+      .select('id, email, name, admin, active')
       .eq('email', normalizedEmail)
-      .single();
+      .maybeSingle();
     
-    if (!adminUser || !adminUser.active) {
-      return res.status(403).json({ error: 'User not found or inactive' });
+    if (meError) {
+      console.error('❌ Error fetching user in /me:', meError);
+      return res.status(500).json({ error: 'Database error' });
+    }
+    
+    if (!adminUser || !adminUser.active || !adminUser.admin) {
+      return res.status(403).json({ error: 'Access denied. Admin privileges required.' });
     }
     
     res.json({
@@ -252,7 +282,7 @@ router.get('/me', async (req, res, next) => {
         id: adminUser.id,
         email: user.email,
         name: adminUser.name,
-        role: adminUser.role,
+        admin: adminUser.admin,
         supabase_user_id: user.id
       }
     });
