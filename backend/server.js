@@ -101,21 +101,22 @@ app.get('/', (req, res) => {
   });
 });
 
+// AUTH REMOVED: Rebuilding auth as separate system
 // Public routes (no authentication required)
-app.use('/api/auth', authRoutes);
+// app.use('/api/auth', authRoutes);
 
-// Protected routes (require authentication)
-app.use('/api/dashboard', authenticate, dashboardRoutes);
-app.use('/api/students', authenticate, studentRoutes);
-app.use('/api/schools', authenticate, schoolRoutes);
-app.use('/api/screeners', authenticate, screenerRoutes);
-app.use('/api/admin-users', authenticate, adminUserRoutes);
-app.use('/api/exports', authenticate, exportRoutes);
-app.use('/api/screening', authenticate, screeningRoutes);
+// All routes are now public (auth removed temporarily)
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/students', studentRoutes);
+app.use('/api/schools', schoolRoutes);
+app.use('/api/screeners', screenerRoutes);
+app.use('/api/admin-users', adminUserRoutes);
+app.use('/api/exports', exportRoutes);
+app.use('/api/screening', screeningRoutes);
 
 console.log('✓ Routes registered:');
-console.log('  Public: /, /health, /api/auth/*');
-console.log('  Protected: /api/dashboard, /api/students, /api/schools, /api/screeners, /api/admin-users, /api/exports, /api/screening');
+console.log('  Public: /, /health');
+console.log('  All API routes are now public (auth removed temporarily): /api/dashboard, /api/students, /api/schools, /api/screeners, /api/admin-users, /api/exports, /api/screening');
 
 // Health check
 app.get('/health', (req, res) => {

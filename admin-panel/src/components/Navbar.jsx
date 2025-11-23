@@ -1,10 +1,12 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { Link, useLocation } from 'react-router-dom';
+// AUTH REMOVED: Rebuilding auth as separate system
+// import { useAuth } from '../contexts/AuthContext';
 
 export default function Navbar() {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  // AUTH REMOVED
+  // const navigate = useNavigate();
+  // const { user, logout } = useAuth();
   
   const isActive = (path) => location.pathname === path;
   
@@ -16,10 +18,11 @@ export default function Navbar() {
     { path: '/advanced', label: 'Advanced' },
   ];
   
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
+  // AUTH REMOVED: Logout handler removed
+  // const handleLogout = () => {
+  //   logout();
+  //   navigate('/login');
+  // };
   
   return (
     <header className="bg-white border-b border-gray-200">
@@ -48,19 +51,7 @@ export default function Navbar() {
               ))}
             </nav>
             
-            <div className="flex items-center gap-3 border-l border-gray-200 pl-4">
-              {user && (
-                <span className="text-sm text-gray-600">
-                  {user.name}
-                </span>
-              )}
-              <button
-                onClick={handleLogout}
-                className="px-3 py-1 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded transition-colors"
-              >
-                Logout
-              </button>
-            </div>
+            {/* AUTH REMOVED: User name and logout button removed - rebuilding auth as separate system */}
           </div>
         </div>
       </div>

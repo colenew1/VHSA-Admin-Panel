@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { AuthProvider } from './contexts/AuthContext';
-import ProtectedRoute from './components/ProtectedRoute';
+// AUTH REMOVED: Rebuilding auth as separate system
+// import { AuthProvider } from './contexts/AuthContext';
+// import ProtectedRoute from './components/ProtectedRoute';
+// import Login from './pages/Login';
 import Navbar from './components/Navbar';
-import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Search from './pages/Search';
 import Import from './pages/Import';
@@ -22,36 +23,22 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* Public route */}
-            <Route path="/login" element={<Login />} />
-            
-            {/* Protected routes */}
-            <Route
-              path="/*"
-              element={
-                <ProtectedRoute>
-                  <div className="min-h-screen bg-gray-50">
-                    <Navbar />
-                    <main className="container mx-auto px-4 py-6">
-                      <Routes>
-                        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                        <Route path="/dashboard" element={<Dashboard />} />
-                        <Route path="/students" element={<Search />} />
-                        <Route path="/import" element={<Import />} />
-                        <Route path="/export" element={<Export />} />
-                        <Route path="/advanced" element={<Advanced />} />
-                      </Routes>
-                    </main>
-                  </div>
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+      {/* AUTH REMOVED: All routes are now public while we rebuild auth system */}
+      <BrowserRouter>
+        <div className="min-h-screen bg-gray-50">
+          <Navbar />
+          <main className="container mx-auto px-4 py-6">
+            <Routes>
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/students" element={<Search />} />
+              <Route path="/import" element={<Import />} />
+              <Route path="/export" element={<Export />} />
+              <Route path="/advanced" element={<Advanced />} />
+            </Routes>
+          </main>
+        </div>
+      </BrowserRouter>
     </QueryClientProvider>
   );
 }

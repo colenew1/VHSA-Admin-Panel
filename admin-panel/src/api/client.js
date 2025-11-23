@@ -16,46 +16,47 @@ const api = axios.create({
   timeout: 30000, // 30 second timeout
 });
 
+// AUTH REMOVED: Rebuilding auth as separate system
 // Add request interceptor to include auth token
-api.interceptors.request.use(
-  (config) => {
-    // Get auth token from localStorage
-    const storedSession = localStorage.getItem('auth_session');
-    if (storedSession) {
-      try {
-        const session = JSON.parse(storedSession);
-        if (session.access_token) {
-          config.headers.Authorization = `Bearer ${session.access_token}`;
-        }
-      } catch (error) {
-        console.error('Error parsing auth session:', error);
-      }
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
+// api.interceptors.request.use(
+//   (config) => {
+//     // Get auth token from localStorage
+//     const storedSession = localStorage.getItem('auth_session');
+//     if (storedSession) {
+//       try {
+//         const session = JSON.parse(storedSession);
+//         if (session.access_token) {
+//           config.headers.Authorization = `Bearer ${session.access_token}`;
+//         }
+//       } catch (error) {
+//         console.error('Error parsing auth session:', error);
+//       }
+//     }
+//     return config;
+//   },
+//   (error) => {
+//     return Promise.reject(error);
+//   }
+// );
 
 // Add response interceptor to handle 401 errors (unauthorized)
-api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  (error) => {
-    // If we get a 401, clear auth and redirect to login
-    if (error.response?.status === 401) {
-      localStorage.removeItem('auth_session');
-      localStorage.removeItem('auth_user');
-      // Redirect to login if we're not already there
-      if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
-      }
-    }
-    return Promise.reject(error);
-  }
-);
+// api.interceptors.response.use(
+//   (response) => {
+//     return response;
+//   },
+//   (error) => {
+//     // If we get a 401, clear auth and redirect to login
+//     if (error.response?.status === 401) {
+//       localStorage.removeItem('auth_session');
+//       localStorage.removeItem('auth_user');
+//       // Redirect to login if we're not already there
+//       if (window.location.pathname !== '/login') {
+//         window.location.href = '/login';
+//       }
+//     }
+//     return Promise.reject(error);
+//   }
+// );
 
 // Add request interceptor for debugging (after auth interceptor)
 api.interceptors.request.use(
