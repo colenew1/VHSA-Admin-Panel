@@ -7,7 +7,11 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
   const gradeLabels = { 'Pre-K (3)': 'Pre-K (3)', 'Pre-K (4)': 'Pre-K (4)' };
   const genders = ['Male', 'Female', 'Other'];
 
-  const handleGradeToggle = (grade) => {
+  const handleGradeToggle = (grade, e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const currentGrades = filters.grade ? filters.grade.split(',') : [];
     const newGrades = currentGrades.includes(grade)
       ? currentGrades.filter(g => g !== grade)
@@ -15,7 +19,11 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
     onChange({ ...filters, grade: newGrades.join(',') || undefined });
   };
 
-  const handleGenderToggle = (gender) => {
+  const handleGenderToggle = (gender, e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
     const currentGenders = filters.gender ? filters.gender.split(',') : [];
     const newGenders = currentGenders.includes(gender)
       ? currentGenders.filter(g => g !== gender)
@@ -55,7 +63,12 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
   return (
     <div className="mb-4">
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsOpen(!isOpen);
+        }}
         className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 flex items-center justify-center"
         style={{ height: '38px' }}
       >
@@ -86,8 +99,9 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
                   const isSelected = filters.grade?.split(',').includes(grade);
                   return (
                     <button
+                      type="button"
                       key={grade}
-                      onClick={() => handleGradeToggle(grade)}
+                      onClick={(e) => handleGradeToggle(grade, e)}
                       className={`px-3 py-1 text-sm rounded ${
                         isSelected
                           ? 'bg-blue-500 text-white'
@@ -109,8 +123,9 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
                   const isSelected = filters.gender?.split(',').includes(gender);
                   return (
                     <button
+                      type="button"
                       key={gender}
-                      onClick={() => handleGenderToggle(gender)}
+                      onClick={(e) => handleGenderToggle(gender, e)}
                       className={`px-3 py-1 text-sm rounded ${
                         isSelected
                           ? 'bg-blue-500 text-white'
@@ -130,7 +145,12 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
               <div className="flex flex-wrap gap-2">
                 {/* Not Started */}
                 <button
-                  onClick={() => onChange({ ...filters, statusNotStarted: !filters.statusNotStarted })}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onChange({ ...filters, statusNotStarted: !filters.statusNotStarted });
+                  }}
                   className={`px-4 py-2 text-sm font-medium rounded-full border-2 transition-all ${
                     filters.statusNotStarted
                       ? 'bg-white border-gray-400 shadow-md ring-2 ring-gray-300'
@@ -145,7 +165,12 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
                 
                 {/* Completed */}
                 <button
-                  onClick={() => onChange({ ...filters, statusCompleted: !filters.statusCompleted })}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onChange({ ...filters, statusCompleted: !filters.statusCompleted });
+                  }}
                   className={`px-4 py-2 text-sm font-medium rounded-full border-2 transition-all ${
                     filters.statusCompleted
                       ? 'bg-green-50 border-green-400 shadow-md ring-2 ring-green-300'
@@ -160,7 +185,12 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
                 
                 {/* Incomplete */}
                 <button
-                  onClick={() => onChange({ ...filters, statusIncomplete: !filters.statusIncomplete })}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onChange({ ...filters, statusIncomplete: !filters.statusIncomplete });
+                  }}
                   className={`px-4 py-2 text-sm font-medium rounded-full border-2 transition-all ${
                     filters.statusIncomplete
                       ? 'bg-amber-50 border-amber-400 shadow-md ring-2 ring-amber-300'
@@ -175,7 +205,12 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
                 
                 {/* Failed */}
                 <button
-                  onClick={() => onChange({ ...filters, statusFailed: !filters.statusFailed })}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onChange({ ...filters, statusFailed: !filters.statusFailed });
+                  }}
                   className={`px-4 py-2 text-sm font-medium rounded-full border-2 transition-all ${
                     filters.statusFailed
                       ? 'bg-red-50 border-red-400 shadow-md ring-2 ring-red-300'
@@ -190,7 +225,12 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
                 
                 {/* Absent */}
                 <button
-                  onClick={() => onChange({ ...filters, statusAbsent: !filters.statusAbsent })}
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onChange({ ...filters, statusAbsent: !filters.statusAbsent });
+                  }}
                   className={`px-4 py-2 text-sm font-medium rounded-full border-2 transition-all ${
                     filters.statusAbsent
                       ? 'bg-blue-100 border-blue-400 shadow-md ring-2 ring-blue-300'
@@ -210,7 +250,11 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
               <label className="block text-sm font-medium text-gray-700 mb-2">Returning?</label>
               <select
                 value={filters.returning || 'all'}
-                onChange={(e) => handleReturningChange(e.target.value)}
+                onChange={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleReturningChange(e.target.value);
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
               >
                 <option value="all">All</option>
@@ -223,7 +267,12 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
           {hasActiveFilters && (
             <div className="mt-4 flex justify-end">
               <button
-                onClick={handleClear}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleClear();
+                }}
                 className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
               >
                 Clear All Filters

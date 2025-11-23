@@ -157,29 +157,32 @@ export default function Dashboard() {
   const students = useMemo(() => {
     let filtered = [...allStudents];
 
-    // Filter by status checkboxes - only show if checkbox is checked
-    filtered = filtered.filter(student => {
-      const status = getRowStatus(student);
-      const failed = hasFailedTest(student);
-      
-      // Check if student has failed tests
-      if (failed && !filters.statusFailed) {
-        return false;
-      }
-      
-      switch (status) {
-        case 'not_started':
-          return filters.statusNotStarted;
-        case 'completed':
-          return filters.statusCompleted;
-        case 'incomplete':
-          return filters.statusIncomplete;
-        case 'absent':
-          return filters.statusAbsent;
-        default:
-          return true;
-      }
-    });
+    // Filter by status checkboxes - only apply if search has been triggered
+    // This allows users to select multiple statuses before clicking Search
+    if (hasSearched) {
+      filtered = filtered.filter(student => {
+        const status = getRowStatus(student);
+        const failed = hasFailedTest(student);
+        
+        // Check if student has failed tests
+        if (failed && !filters.statusFailed) {
+          return false;
+        }
+        
+        switch (status) {
+          case 'not_started':
+            return filters.statusNotStarted;
+          case 'completed':
+            return filters.statusCompleted;
+          case 'incomplete':
+            return filters.statusIncomplete;
+          case 'absent':
+            return filters.statusAbsent;
+          default:
+            return true;
+        }
+      });
+    }
 
     // Apply column filters
     filtered = filtered.filter(student => {
@@ -353,7 +356,7 @@ export default function Dashboard() {
     }
 
     return filtered;
-  }, [allStudents, filters.statusNotStarted, filters.statusCompleted, filters.statusIncomplete, filters.statusFailed, filters.statusAbsent, columnFilters, sortConfig]);
+  }, [allStudents, hasSearched, filters.statusNotStarted, filters.statusCompleted, filters.statusIncomplete, filters.statusFailed, filters.statusAbsent, columnFilters, sortConfig]);
 
   // Apply pagination to filtered results
   const paginatedStudents = useMemo(() => {
@@ -658,8 +661,11 @@ export default function Dashboard() {
             <select
               value={filters.school}
               onChange={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                // Update filters but don't trigger search - user must click Search button
                 setFilters({ ...filters, school: e.target.value });
-                setCurrentPage(0);
+                // Don't reset page or trigger search here
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
             >
@@ -678,15 +684,18 @@ export default function Dashboard() {
             <select
               value={filters.year}
               onChange={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
                 const selectedYear = e.target.value;
                 // Auto-set date range to that year (for display purposes)
+                // Don't trigger search - user must click Search button
                 setFilters({ 
                   ...filters, 
                   year: selectedYear,
                   startDate: `${selectedYear}-01-01`,
                   endDate: `${selectedYear}-12-31`
                 });
-                setCurrentPage(0);
+                // Don't reset page or trigger search here
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
               title="Filter by the year the screening record was created (when student was intaken/imported)"
@@ -705,8 +714,9 @@ export default function Dashboard() {
               type="date"
               value={filters.startDate}
               onChange={(e) => {
+                // Update filters but don't trigger search - user must click Search button
                 setFilters({ ...filters, startDate: e.target.value });
-                setCurrentPage(0);
+                // Don't reset page or trigger search here
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
             />
@@ -718,8 +728,9 @@ export default function Dashboard() {
               type="date"
               value={filters.endDate}
               onChange={(e) => {
+                // Update filters but don't trigger search - user must click Search button
                 setFilters({ ...filters, endDate: e.target.value });
-                setCurrentPage(0);
+                // Don't reset page or trigger search here
               }}
               className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
             />
@@ -730,25 +741,45 @@ export default function Dashboard() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Quick Filters</label>
             <div className="flex gap-2">
               <button
-                onClick={() => setQuickDateFilter('today')}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setQuickDateFilter('today');
+                }}
                 className="px-3 py-2 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
               >
                 Today
               </button>
               <button
-                onClick={() => setQuickDateFilter('yesterday')}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setQuickDateFilter('yesterday');
+                }}
                 className="px-3 py-2 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
               >
                 Yesterday
               </button>
               <button
-                onClick={() => setQuickDateFilter('thisWeek')}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setQuickDateFilter('thisWeek');
+                }}
                 className="px-3 py-2 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
               >
                 This Week
               </button>
               <button
-                onClick={() => setQuickDateFilter('thisMonth')}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setQuickDateFilter('thisMonth');
+                }}
                 className="px-3 py-2 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
               >
                 This Month
@@ -759,7 +790,12 @@ export default function Dashboard() {
           {/* Search Button */}
           <div className="flex items-end gap-2">
             <button
-              onClick={handleSearch}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleSearch();
+              }}
               disabled={!filters.startDate || !filters.endDate}
               className="px-6 py-2 text-sm font-medium bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 h-[38px]"
             >
@@ -786,8 +822,10 @@ export default function Dashboard() {
             <AdvancedFilters
               filters={filters}
               onChange={(newFilters) => {
+                // Update filters but don't trigger search automatically
+                // User must click Search button to apply filters
                 setFilters(newFilters);
-                setCurrentPage(0);
+                // Don't reset page or trigger search here - wait for Search button
               }}
             />
           </div>

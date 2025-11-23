@@ -443,7 +443,7 @@ export default function Advanced() {
         updateSchoolMutation.mutate({ id: capturedId, data: capturedData });
       } else if (capturedType === 'screeners') {
         updateScreenerMutation.mutate({ id: capturedId, data: capturedData });
-      } else if (capturedType === 'phoneNumbers') {
+      } else if (capturedType === 'emails') {
         updateAdminUserMutation.mutate({ id: capturedId, data: capturedData });
       }
     });
@@ -468,7 +468,7 @@ export default function Advanced() {
         createSchoolMutation.mutate(newItem);
       } else if (activeTab === 'screeners') {
         createScreenerMutation.mutate(newItem);
-      } else if (activeTab === 'phoneNumbers') {
+      } else if (activeTab === 'emails') {
         createAdminUserMutation.mutate(newItem);
       }
       setShowConfirmDialog(false);
@@ -603,7 +603,7 @@ export default function Advanced() {
                   <option value="false">No (Hidden)</option>
                 </select>
               </div>
-              {type === 'phoneNumbers' && (
+              {type === 'emails' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Admin
@@ -652,7 +652,7 @@ export default function Advanced() {
                   <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Email Address</th>
                 )}
                 <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Active (Enabled)</th>
-                {type === 'phoneNumbers' && (
+                {type === 'emails' && (
                   <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Admin</th>
                 )}
                 <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
@@ -671,8 +671,8 @@ export default function Advanced() {
                   const changes = unsavedChanges[item.id] || {};
                   const displayName = changes.name !== undefined ? changes.name : item.name;
                   const displayEmail = changes.email !== undefined ? changes.email : (item.email || '');
-                  const displayActive = changes.active !== undefined ? changes.active : item.active;
-                  const displayAdmin = changes.admin !== undefined ? changes.admin : item.admin;
+                  const displayActive = changes.active !== undefined ? changes.active : (item.active ?? true);
+                  const displayAdmin = changes.admin !== undefined ? changes.admin : (item.admin ?? false);
 
                   return (
                     <tr 
@@ -728,7 +728,7 @@ export default function Advanced() {
                           </span>
                         )}
                       </td>
-                      {type === 'phoneNumbers' && (
+                      {type === 'emails' && (
                         <td className="border border-gray-300 px-4 py-3">
                           {isEditing ? (
                             <select
@@ -754,7 +754,9 @@ export default function Advanced() {
                         {isEditing ? (
                           <div className="flex gap-2">
                             <button
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
                                 console.log('Save button clicked for:', item.id, type);
                                 handleSave(item.id, type);
                               }}
@@ -868,8 +870,21 @@ export default function Advanced() {
 
       {/* Confirmation Dialog */}
       {showConfirmDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            // Close dialog if clicking backdrop
+            if (e.target === e.currentTarget) {
+              setShowConfirmDialog(false);
+              setConfirmAction(null);
+              setConfirmMessage('');
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg p-6 max-w-md w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Action</h3>
             <p className="text-gray-700 mb-6">
               {confirmMessage}
@@ -886,7 +901,9 @@ export default function Advanced() {
                 Cancel
               </button>
               <button
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
                   if (confirmAction && !confirmExecutedRef.current) {
                     confirmExecutedRef.current = true;
                     try {
