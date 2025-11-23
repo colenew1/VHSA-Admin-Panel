@@ -188,73 +188,34 @@ export function formatDOB(dobString) {
 }
 
 /**
- * Calculate overall vision pass/fail
- * Vision fails if any eye (initial or rescreen) has acuity worse than 20/40 or shows "F"
+ * Get overall vision pass/fail from database (screener's explicit determination)
+ * The screener's input is the source of truth, not calculated values
  * @param {Object} student - Student screening data
- * @returns {string} - 'P' (Pass), 'F' (Fail), or '' (not tested)
+ * @returns {string} - 'P' (Pass), 'F' (Fail), or '' (not set by screener)
  */
 export function getVisionOverall(student) {
-  const visionValues = [
-    student.vision_initial_right,
-    student.vision_initial_left,
-    student.vision_rescreen_right,
-    student.vision_rescreen_left
-  ].filter(v => v && v.trim() !== '');
-
-  if (visionValues.length === 0) {
-    return ''; // Not tested
+  // Use the screener's explicit overall determination if available
+  if (student.vision_overall) {
+    return student.vision_overall.toUpperCase(); // Normalize to uppercase
   }
-
-  // Check for explicit "F" (fail)
-  if (visionValues.some(v => v.toUpperCase() === 'F')) {
-    return 'F';
-  }
-
-  // Check for acuity values worse than 20/40
-  for (const value of visionValues) {
-    const acuity = value.toString().trim();
-    // Parse acuity like "20/40", "20/50", etc.
-    const match = acuity.match(/20\/(\d+)/);
-    if (match) {
-      const denominator = parseInt(match[1]);
-      if (denominator > 40) {
-        return 'F'; // Worse than 20/40 is a fail
-      }
-    }
-  }
-
-  // If we have values and none are fails, it's a pass
-  return 'P';
+  
+  // If not set by screener, return empty (don't calculate)
+  return '';
 }
 
 /**
- * Calculate overall hearing pass/fail
- * Hearing fails if any frequency (initial or rescreen) shows "F"
+ * Get overall hearing pass/fail from database (screener's explicit determination)
+ * The screener's input is the source of truth, not calculated values
  * @param {Object} student - Student screening data
- * @returns {string} - 'P' (Pass), 'F' (Fail), or '' (not tested)
+ * @returns {string} - 'P' (Pass), 'F' (Fail), or '' (not set by screener)
  */
 export function getHearingOverall(student) {
-  const hearingFields = [
-    'hearing_initial_right_1000', 'hearing_initial_right_2000', 'hearing_initial_right_4000',
-    'hearing_initial_left_1000', 'hearing_initial_left_2000', 'hearing_initial_left_4000',
-    'hearing_rescreen_right_1000', 'hearing_rescreen_right_2000', 'hearing_rescreen_right_4000',
-    'hearing_rescreen_left_1000', 'hearing_rescreen_left_2000', 'hearing_rescreen_left_4000'
-  ];
-
-  const hearingValues = hearingFields
-    .map(field => student[field])
-    .filter(v => v && v.toString().trim() !== '');
-
-  if (hearingValues.length === 0) {
-    return ''; // Not tested
+  // Use the screener's explicit overall determination if available
+  if (student.hearing_overall) {
+    return student.hearing_overall.toUpperCase(); // Normalize to uppercase
   }
-
-  // Check for any "F" (fail)
-  if (hearingValues.some(v => v.toString().toUpperCase() === 'F')) {
-    return 'F';
-  }
-
-  // If we have values and none are fails, it's a pass
-  return 'P';
+  
+  // If not set by screener, return empty (don't calculate)
+  return '';
 }
 

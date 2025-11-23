@@ -343,6 +343,15 @@ export default function Search() {
       acanthosis_rescreen: screening.acanthosis_rescreen_result || null,
       scoliosis_initial: screening.scoliosis_initial_result || null,
       scoliosis_rescreen: screening.scoliosis_rescreen_result || null,
+      // Screener names
+      vision_initial_screener: screening.vision_initial_screener || null,
+      vision_rescreen_screener: screening.vision_rescreen_screener || null,
+      hearing_initial_screener: screening.hearing_initial_screener || null,
+      hearing_rescreen_screener: screening.hearing_rescreen_screener || null,
+      acanthosis_initial_screener: screening.acanthosis_initial_screener || null,
+      acanthosis_rescreen_screener: screening.acanthosis_rescreen_screener || null,
+      scoliosis_initial_screener: screening.scoliosis_initial_screener || null,
+      scoliosis_rescreen_screener: screening.scoliosis_rescreen_screener || null,
     };
     
     // Merge with unsaved changes
@@ -820,6 +829,7 @@ export default function Search() {
                                   <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700" style={{ minWidth: '100px' }}>Initial Left</th>
                                   <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700" style={{ minWidth: '100px' }}>Rescreen Right</th>
                                   <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700" style={{ minWidth: '100px' }}>Rescreen Left</th>
+                                  <th className="border border-gray-300 px-3 py-2 text-center font-semibold text-gray-700" style={{ minWidth: '120px' }}>Screener</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -866,11 +876,17 @@ export default function Search() {
                                       disabled={!isEditing}
                                     />
                                   </td>
+                                  <td className="border border-gray-300 px-3 py-2 text-center text-xs text-gray-600">
+                                    <div className="space-y-1">
+                                      <div>Init: {displayData.vision_initial_screener || '—'}</div>
+                                      <div>Rescreen: {displayData.vision_rescreen_screener || '—'}</div>
+                                    </div>
+                                  </td>
                                 </tr>
                                 
                                 {/* Hearing Rows */}
                                 <tr>
-                                  <td className="border border-gray-300 px-3 py-2 font-medium text-gray-700 bg-gray-50" rowSpan={4}>Hearing</td>
+                                  <td className="border border-gray-300 px-3 py-2 font-medium text-gray-700 bg-gray-50" rowSpan={5}>Hearing</td>
                                   <td className="border border-gray-300 px-3 py-2 text-center">
                                     <div className="space-y-1">
                                       <div className="text-xs text-gray-500">1k</div>
@@ -1034,6 +1050,12 @@ export default function Search() {
                                 </tr>
                                 <tr>
                                   <td className="border border-gray-300 px-3 py-2 text-center font-medium text-gray-600 text-xs" colSpan={4}>All frequencies (1k, 2k, 4k) shown above</td>
+                                  <td className="border border-gray-300 px-3 py-2 text-center text-xs text-gray-600">
+                                    <div className="space-y-1">
+                                      <div>Init: {displayData.hearing_initial_screener || '—'}</div>
+                                      <div>Rescreen: {displayData.hearing_rescreen_screener || '—'}</div>
+                                    </div>
+                                  </td>
                                 </tr>
                                 
                                 {/* AN Row */}
@@ -1059,6 +1081,12 @@ export default function Search() {
                                       disabled={!isEditing}
                                     />
                                   </td>
+                                  <td className="border border-gray-300 px-3 py-2 text-center text-xs text-gray-600">
+                                    <div className="space-y-1">
+                                      <div>Init: {displayData.acanthosis_initial_screener || '—'}</div>
+                                      <div>Rescreen: {displayData.acanthosis_rescreen_screener || '—'}</div>
+                                    </div>
+                                  </td>
                                 </tr>
                                 
                                 {/* Spinal Row */}
@@ -1083,6 +1111,12 @@ export default function Search() {
                                       className="text-sm text-center font-medium w-full"
                                       disabled={!isEditing}
                                     />
+                                  </td>
+                                  <td className="border border-gray-300 px-3 py-2 text-center text-xs text-gray-600">
+                                    <div className="space-y-1">
+                                      <div>Init: {displayData.scoliosis_initial_screener || '—'}</div>
+                                      <div>Rescreen: {displayData.scoliosis_rescreen_screener || '—'}</div>
+                                    </div>
                                   </td>
                                 </tr>
                               </tbody>

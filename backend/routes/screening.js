@@ -249,6 +249,7 @@ router.get('/data', async (req, res, next) => {
         vision_initial_left: screeningRow?.vision_initial_left_eye ?? null,
         vision_rescreen_right: screeningRow?.vision_rescreen_right_eye ?? null,
         vision_rescreen_left: screeningRow?.vision_rescreen_left_eye ?? null,
+        vision_overall: screeningRow?.vision_overall ?? null, // Screener's explicit overall pass/fail
         // Hearing - all 12 frequency columns (1k, 2k, 4k for right/left, initial/rescreen)
         hearing_required: screeningRow?.hearing_required ?? false,
         hearing_complete: screeningRow?.hearing_complete ?? false, // Use database's generated column
@@ -268,6 +269,7 @@ router.get('/data', async (req, res, next) => {
         hearing_rescreen_left_1000: screeningRow?.hearing_rescreen_left_1000 ?? null,
         hearing_rescreen_left_2000: screeningRow?.hearing_rescreen_left_2000 ?? null,
         hearing_rescreen_left_4000: screeningRow?.hearing_rescreen_left_4000 ?? null,
+        hearing_overall: screeningRow?.hearing_overall ?? null, // Screener's explicit overall pass/fail
         // Acanthosis - using correct field names
         acanthosis_required: screeningRow?.acanthosis_required ?? false,
         acanthosis_complete: screeningRow?.acanthosis_complete ?? false, // Use database's generated column
@@ -398,6 +400,7 @@ router.put('/:unique_id', async (req, res, next) => {
       'vision_initial_left': 'vision_initial_left_eye',
       'vision_rescreen_right': 'vision_rescreen_right_eye',
       'vision_rescreen_left': 'vision_rescreen_left_eye',
+      'vision_overall': 'vision_overall', // Screener's explicit overall pass/fail
       // Hearing - all 12 frequency fields
       'hearing_required': 'hearing_required',
       'hearing_complete': 'hearing_complete',
@@ -413,6 +416,7 @@ router.put('/:unique_id', async (req, res, next) => {
       'hearing_rescreen_left_1000': 'hearing_rescreen_left_1000',
       'hearing_rescreen_left_2000': 'hearing_rescreen_left_2000',
       'hearing_rescreen_left_4000': 'hearing_rescreen_left_4000',
+      'hearing_overall': 'hearing_overall', // Screener's explicit overall pass/fail
       // Acanthosis
       'acanthosis_required': 'acanthosis_required',
       'acanthosis_complete': 'acanthosis_complete',

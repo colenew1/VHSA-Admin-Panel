@@ -1369,9 +1369,14 @@ export default function Dashboard() {
                     
                     {/* Vision Overall */}
                     <td className="border-r border-gray-200 px-3 py-3">
-                      <div className="text-sm text-center font-bold">
-                        {formatTestResult(getVisionOverall(displayData))}
-                      </div>
+                      <EditableCell
+                        value={displayData.vision_overall || ''}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'vision_overall', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
+                        className="text-sm text-center font-bold"
+                        disabled={!isEditing}
+                      />
                     </td>
                     
                     {/* Vision Results */}
@@ -1418,9 +1423,14 @@ export default function Dashboard() {
                     
                     {/* Hearing Overall */}
                     <td className="border-r border-gray-200 px-3 py-3">
-                      <div className="text-sm text-center font-bold">
-                        {formatTestResult(getHearingOverall(displayData))}
-                      </div>
+                      <EditableCell
+                        value={displayData.hearing_overall || ''}
+                        onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_overall', value) : undefined}
+                        type={isEditing ? 'select' : 'text'}
+                        options={isEditing ? TEST_RESULT_OPTIONS : []}
+                        className="text-sm text-center font-bold"
+                        disabled={!isEditing}
+                      />
                     </td>
                     
                     {/* Hearing Results - Initial Right (1k, 2k, 4k) */}
