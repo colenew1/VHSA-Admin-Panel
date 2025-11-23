@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
@@ -10,10 +11,49 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState(null);
 
-  // Check for existing session on mount
+  // Check for existing session on mount and handle magic link callback
   useEffect(() => {
-    checkAuth();
+    // Check if we're handling a magic link callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const accessToken = urlParams.get('access_token');
+    
+    if (accessToken) {
+      // Handle magic link callback
+      handleMagicLinkCallback(accessToken, urlParams);
+    } else {
+      // Normal auth check
+      checkAuth();
+    }
   }, []);
+
+  const handleMagicLinkCallback = async (accessToken, urlParams) => {
+    try {
+      // Verify the session with backend
+      const response = await axios.post(`${API_URL}/api/auth/verify-session`, {
+        access_token: accessToken
+      });
+      
+      const { session: sessionData, user: userData } = response.data;
+      
+      // Store in localStorage
+      localStorage.setItem('auth_session', JSON.stringify(sessionData));
+      localStorage.setItem('auth_user', JSON.stringify(userData));
+      
+      setUser(userData);
+      setSession(sessionData);
+      
+      // Clean up URL
+      window.history.replaceState({}, document.title, '/');
+      
+      // Redirect to dashboard
+      window.location.href = '/dashboard';
+    } catch (error) {
+      console.error('Error verifying magic link session:', error);
+      // Clean up URL and show error
+      window.history.replaceState({}, document.title, '/login');
+      checkAuth();
+    }
+  };
 
   const checkAuth = async () => {
     try {
@@ -48,42 +88,19 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const login = async (phone, token) => {
+  const requestMagicLink = async (email) => {
     try {
-      const response = await axios.post(`${API_URL}/api/auth/verify-otp`, {
-        phone,
-        token
-      });
-      
-      const { session: sessionData, user: userData } = response.data;
-      
-      // Store in localStorage
-      localStorage.setItem('auth_session', JSON.stringify(sessionData));
-      localStorage.setItem('auth_user', JSON.stringify(userData));
-      
-      setUser(userData);
-      setSession(sessionData);
-      
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.response?.data?.error || error.message || 'Login failed'
-      };
-    }
-  };
-
-  const requestOTP = async (phone) => {
-    try {
-      const response = await axios.post(`${API_URL}/api/auth/request-otp`, {
-        phone
+      const redirectTo = `${window.location.origin}/api/auth/callback`;
+      const response = await axios.post(`${API_URL}/api/auth/request-magic-link`, {
+        email,
+        redirectTo
       });
       
       return { success: true, message: response.data.message };
     } catch (error) {
       return {
         success: false,
-        error: error.response?.data?.error || error.message || 'Failed to send OTP'
+        error: error.response?.data?.error || error.message || 'Failed to send magic link'
       };
     }
   };
@@ -110,8 +127,7 @@ export function AuthProvider({ children }) {
     user,
     session,
     loading,
-    login,
-    requestOTP,
+    requestMagicLink,
     logout,
     checkAuth,
     getAuthToken,
@@ -128,4 +144,3 @@ export function useAuth() {
   }
   return context;
 }
-

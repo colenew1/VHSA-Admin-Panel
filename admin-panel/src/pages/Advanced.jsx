@@ -6,27 +6,27 @@ import api from '../api/client';
 /**
  * Advanced Settings Page - Master List Manager
  * 
- * This page is the MASTER LIST for managing schools, screeners, and admin users (phone numbers).
+ * This page is the MASTER LIST for managing schools, screeners, and admin users (emails).
  * All changes here directly update the database tables.
  * 
  * - Schools: Updates the 'schools' table (used by Dashboard, Import, Export, etc.)
  * - Screeners: Updates the 'screeners' table
- * - Phone Numbers: Updates the 'admin_users' table (used for authentication)
+ * - Emails: Updates the 'admin_users' table (used for authentication)
  * 
  * When you edit/add/update here, it syncs with:
  * - Dashboard school dropdowns
  * - Import page school selection
- * - Authentication system (phone numbers)
+ * - Authentication system (emails)
  * - All other pages that use these tables
  */
 export default function Advanced() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('schools');
   const [editingId, setEditingId] = useState(null);
-  const [editingType, setEditingType] = useState(null); // 'schools', 'screeners', or 'phoneNumbers'
+  const [editingType, setEditingType] = useState(null); // 'schools', 'screeners', or 'emails'
   const [unsavedChanges, setUnsavedChanges] = useState({});
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newItem, setNewItem] = useState({ name: '', active: true, admin: true, phone_number: '' });
+  const [newItem, setNewItem] = useState({ name: '', active: true, admin: true, email: '' });
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [confirmMessage, setConfirmMessage] = useState('');
@@ -56,7 +56,7 @@ export default function Advanced() {
     queryFn: () => getScreeners(),
   });
 
-  // Fetch admin users (phone numbers) - all, not just active
+  // Fetch admin users (emails) - all, not just active
   const { data: adminUsersData, isLoading: loadingAdminUsers } = useQuery({
     queryKey: ['adminUsers', 'all'],
     queryFn: async () => {
@@ -138,15 +138,15 @@ export default function Advanced() {
     return filtered;
   }, [allScreeners, filters]);
   
-  const phoneNumbers = useMemo(() => {
+  const emails = useMemo(() => {
     let filtered = [...allAdminUsers];
     
-    // Filter by search (name or phone number)
+    // Filter by search (name or email)
     if (filters.search) {
       const searchLower = filters.search.toLowerCase();
       filtered = filtered.filter(u => 
         u.name?.toLowerCase().includes(searchLower) ||
-        u.phone_number?.toLowerCase().includes(searchLower)
+        u.email?.toLowerCase().includes(searchLower)
       );
     }
     
@@ -175,7 +175,7 @@ export default function Advanced() {
       queryClient.invalidateQueries(['schools']);
       queryClient.invalidateQueries(['schools', 'all']);
       setShowAddForm(false);
-      setNewItem({ name: '', active: true, admin: true, phone_number: '' });
+      setNewItem({ name: '', active: true, admin: true, email: '' });
     },
   });
 
@@ -360,7 +360,7 @@ export default function Advanced() {
   // Handle delete (screeners and admin users - schools cannot be deleted)
   const handleDelete = (id, type) => {
     // Only allow delete for screeners and admin users
-    if (type !== 'screeners' && type !== 'phoneNumbers') {
+    if (type !== 'screeners' && type !== 'emails') {
       return;
     }
 
@@ -375,7 +375,7 @@ export default function Advanced() {
     setConfirmAction(() => {
       if (type === 'screeners') {
         deleteScreenerMutation.mutate(id);
-      } else if (type === 'phoneNumbers') {
+      } else if (type === 'emails') {
         deleteAdminUserMutation.mutate(id);
       }
       setShowConfirmDialog(false);
@@ -403,7 +403,7 @@ export default function Advanced() {
       ? schools.find(s => s.id === id)
       : type === 'screeners'
       ? screeners.find(s => s.id === id)
-      : phoneNumbers.find(u => u.id === id);
+      : emails.find(u => u.id === id);
     
     if (!item) {
       console.error('Item not found for save:', id, type);
@@ -418,9 +418,9 @@ export default function Advanced() {
       active: changes.active !== undefined ? changes.active : item.active,
     };
 
-    // Add phone_number and admin for admin users
-    if (type === 'phoneNumbers') {
-      updateData.phone_number = changes.phone_number !== undefined ? changes.phone_number : (item.phone_number || '');
+    // Add email and admin for admin users
+    if (type === 'emails') {
+      updateData.email = changes.email !== undefined ? changes.email : (item.email || '');
       updateData.admin = changes.admin !== undefined ? changes.admin : item.admin;
     }
 
@@ -499,13 +499,13 @@ export default function Advanced() {
         {/* Header with Add Button */}
         <div className="flex justify-between items-center">
           <h2 className="text-xl font-semibold text-gray-900 capitalize">
-            {type === 'schools' ? 'Schools' : type === 'screeners' ? 'Screeners' : 'Phone Numbers'} ({items.length} of {allItems.length})
+            {type === 'schools' ? 'Schools' : type === 'screeners' ? 'Screeners' : 'Emails'} ({items.length} of {allItems.length})
           </h2>
           <button
             onClick={() => setShowAddForm(true)}
             className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
           >
-            Add New {type === 'schools' ? 'School' : type === 'screeners' ? 'Screener' : 'Phone Number'}
+            Add New {type === 'schools' ? 'School' : type === 'screeners' ? 'Screener' : 'Email'}
           </button>
         </div>
         
@@ -521,7 +521,7 @@ export default function Advanced() {
                 type="text"
                 value={filters.search}
                 onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                placeholder={`Search ${type === 'schools' ? 'schools' : type === 'screeners' ? 'screeners' : 'phone numbers'}...`}
+                placeholder={`Search ${type === 'schools' ? 'schools' : type === 'screeners' ? 'screeners' : 'emails'}...`}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
               />
             </div>
@@ -560,9 +560,9 @@ export default function Advanced() {
         {showAddForm && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Add New {type === 'schools' ? 'School' : type === 'screeners' ? 'Screener' : 'Phone Number'}
+              Add New {type === 'schools' ? 'School' : type === 'screeners' ? 'Screener' : 'Email'}
             </h3>
-            <div className={`grid grid-cols-1 ${type === 'phoneNumbers' ? 'md:grid-cols-5' : 'md:grid-cols-3'} gap-4`}>
+            <div className={`grid grid-cols-1 ${type === 'emails' ? 'md:grid-cols-5' : 'md:grid-cols-3'} gap-4`}>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Name <span className="text-red-500">*</span>
@@ -575,17 +575,17 @@ export default function Advanced() {
                   placeholder={`Enter ${type === 'schools' ? 'school' : type === 'screeners' ? 'screener' : 'name'}`}
                 />
               </div>
-              {type === 'phoneNumbers' && (
+              {type === 'emails' && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Phone Number
+                    Email Address
                   </label>
                   <input
-                    type="tel"
-                    value={newItem.phone_number || ''}
-                    onChange={(e) => setNewItem({ ...newItem, phone_number: e.target.value })}
+                    type="email"
+                    value={newItem.email || ''}
+                    onChange={(e) => setNewItem({ ...newItem, email: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                    placeholder="(512) 555-1234 or +15125551234"
+                    placeholder="user@example.com"
                   />
                   <p className="mt-1 text-xs text-gray-500">Optional - can add later</p>
                 </div>
@@ -630,7 +630,7 @@ export default function Advanced() {
                   <button
                     onClick={() => {
                       setShowAddForm(false);
-                      setNewItem({ name: '', active: true, admin: true, phone_number: '' });
+                      setNewItem({ name: '', active: true, admin: true, email: '' });
                     }}
                     className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
                   >
@@ -648,8 +648,8 @@ export default function Advanced() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Name</th>
-                {type === 'phoneNumbers' && (
-                  <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Phone Number</th>
+                {type === 'emails' && (
+                  <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Email Address</th>
                 )}
                 <th className="border border-gray-300 px-4 py-3 text-left font-semibold text-gray-700">Active (Enabled)</th>
                 {type === 'phoneNumbers' && (
@@ -661,8 +661,8 @@ export default function Advanced() {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={type === 'phoneNumbers' ? 5 : 3} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
-                    No {type === 'schools' ? 'schools' : type === 'screeners' ? 'screeners' : 'phone numbers'} found
+                  <td colSpan={type === 'emails' ? 5 : 3} className="border border-gray-300 px-4 py-8 text-center text-gray-500">
+                    No {type === 'schools' ? 'schools' : type === 'screeners' ? 'screeners' : 'emails'} found
                   </td>
                 </tr>
               ) : (
@@ -670,7 +670,7 @@ export default function Advanced() {
                   const isEditing = editingId === item.id && editingType === type;
                   const changes = unsavedChanges[item.id] || {};
                   const displayName = changes.name !== undefined ? changes.name : item.name;
-                  const displayPhone = changes.phone_number !== undefined ? changes.phone_number : (item.phone_number || '');
+                  const displayEmail = changes.email !== undefined ? changes.email : (item.email || '');
                   const displayActive = changes.active !== undefined ? changes.active : item.active;
                   const displayAdmin = changes.admin !== undefined ? changes.admin : item.admin;
 
@@ -691,19 +691,19 @@ export default function Advanced() {
                           <span className={!item.active ? 'text-gray-400' : ''}>{item.name}</span>
                         )}
                       </td>
-                      {type === 'phoneNumbers' && (
+                      {type === 'emails' && (
                         <td className="border border-gray-300 px-4 py-3">
                           {isEditing ? (
                             <input
-                              type="tel"
-                              value={displayPhone}
-                              onChange={(e) => handleCellChange(item.id, 'phone_number', e.target.value)}
+                              type="email"
+                              value={displayEmail}
+                              onChange={(e) => handleCellChange(item.id, 'email', e.target.value)}
                               className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                              placeholder="(512) 555-1234"
+                              placeholder="user@example.com"
                             />
                           ) : (
-                            <span className={!item.phone_number ? 'text-gray-400 italic' : ''}>
-                              {item.phone_number || 'No phone number'}
+                            <span className={!item.email ? 'text-gray-400 italic' : ''}>
+                              {item.email || 'No email'}
                             </span>
                           )}
                         </td>
@@ -770,8 +770,8 @@ export default function Advanced() {
                             >
                               Cancel
                             </button>
-                            {/* Delete button - show for screeners and phone numbers, not schools */}
-                            {(type === 'screeners' || type === 'phoneNumbers') && (
+                            {/* Delete button - show for screeners and emails, not schools */}
+                            {(type === 'screeners' || type === 'emails') && (
                               <button
                                 onClick={() => handleDelete(item.id, type)}
                                 disabled={isSaving || deleteScreenerMutation.isLoading || deleteAdminUserMutation.isLoading}
@@ -843,18 +843,18 @@ export default function Advanced() {
           </button>
           <button
             onClick={() => {
-              setActiveTab('phoneNumbers');
+              setActiveTab('emails');
               setEditingId(null);
               setEditingType(null);
               setShowAddForm(false);
             }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'phoneNumbers'
+                  activeTab === 'emails'
                 ? 'text-blue-600 border-blue-600'
                 : 'text-gray-600 border-transparent hover:text-gray-900 hover:border-gray-300'
             }`}
           >
-            Phone Numbers
+            Emails
           </button>
         </nav>
       </div>
@@ -863,7 +863,7 @@ export default function Advanced() {
       <div>
         {activeTab === 'schools' && renderTable(schools, 'schools')}
         {activeTab === 'screeners' && renderTable(screeners, 'screeners')}
-        {activeTab === 'phoneNumbers' && renderTable(phoneNumbers, 'phoneNumbers')}
+        {activeTab === 'emails' && renderTable(emails, 'emails')}
       </div>
 
       {/* Confirmation Dialog */}

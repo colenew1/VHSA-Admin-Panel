@@ -9,109 +9,71 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 const supabaseAuth = createClient(supabaseUrl, supabaseAnonKey);
 
-// Helper function to normalize phone number
-function normalizePhoneNumber(phone) {
-  if (!phone) return null;
-  // Remove all non-digit characters except +
-  let cleaned = phone.replace(/[^\d+]/g, '');
-  // If it doesn't start with +, add +1 for US numbers
-  if (!cleaned.startsWith('+')) {
-    // Remove leading 1 if present (US country code)
-    if (cleaned.startsWith('1') && cleaned.length === 11) {
-      cleaned = cleaned.substring(1);
-    }
-    cleaned = `+1${cleaned}`;
-  }
-  return cleaned;
-}
-
-// Request OTP via SMS - Check database first
-router.post('/request-otp', async (req, res, next) => {
+// Request magic link via email - Check database first
+router.post('/request-magic-link', async (req, res, next) => {
   try {
-    const { phone } = req.body;
+    const { email } = req.body;
     
-    if (!phone) {
-      return res.status(400).json({ error: 'Phone number is required' });
+    if (!email) {
+      return res.status(400).json({ error: 'Email address is required' });
     }
     
-    // Normalize phone number (remove formatting, ensure +1XXXXXXXXXX format)
-    const formattedPhone = normalizePhoneNumber(phone);
-    console.log('📞 Received phone:', phone, '→ Formatted:', formattedPhone);
+    // Normalize email (lowercase, trim)
+    const normalizedEmail = email.toLowerCase().trim();
+    console.log('📧 Received email:', email, '→ Normalized:', normalizedEmail);
     
-    // Check if phone number exists in admin_users database
-    // Try exact match first
-    let { data: adminUser, error: dbError } = await supabase
+    // Check if email exists in admin_users database
+    const { data: adminUser, error: dbError } = await supabase
       .from('admin_users')
-      .select('id, phone_number, name, role, active')
-      .eq('phone_number', formattedPhone)
+      .select('id, email, name, role, active')
+      .eq('email', normalizedEmail)
       .single();
     
-    let allUsers = null;
-    
-    // If not found, try to find by normalizing database phone numbers
     if (dbError || !adminUser) {
-      console.log('⚠️  Exact match not found, checking all admin users...');
-      const { data: allUsersData, error: allUsersError } = await supabase
-        .from('admin_users')
-        .select('id, phone_number, name, role, active');
-      
-      if (!allUsersError && allUsersData) {
-        allUsers = allUsersData;
-        // Find user by normalizing their phone numbers
-        adminUser = allUsers.find(user => {
-          if (!user.phone_number) return false;
-          const normalized = normalizePhoneNumber(user.phone_number);
-          return normalized === formattedPhone;
-        });
-        
-        if (adminUser) {
-          console.log('✅ Found user by normalized phone:', adminUser.name);
-        }
-      }
-    }
-    
-    if (!adminUser) {
-      console.log('❌ Unauthorized login attempt:', formattedPhone);
-      if (allUsers) {
-        console.log('   Available phone numbers in database:', 
-          allUsers.map(u => `${u.name}: ${u.phone_number || 'NULL'}`).join(', '));
-      }
+      console.log('❌ Unauthorized login attempt:', normalizedEmail);
       return res.status(403).json({ 
-        error: 'Phone number not authorized. Please contact administrator.' 
+        error: 'Email address not authorized. Please contact administrator.' 
       });
     }
     
     // Check if user is active
     if (!adminUser.active) {
-      console.log('❌ Inactive account login attempt:', formattedPhone, adminUser.name);
+      console.log('❌ Inactive account login attempt:', normalizedEmail, adminUser.name);
       return res.status(403).json({ 
         error: 'Your account has been deactivated. Please contact administrator.' 
       });
     }
     
-    // Phone is authorized - send OTP via Supabase
-    console.log('📱 Sending OTP to authorized user:', adminUser.name, formattedPhone);
+    // Email is authorized - send magic link via Supabase
+    // Get the redirect URL from request or use default
+    // The redirect URL should point to the backend callback endpoint
+    const backendUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+    const redirectTo = req.body.redirectTo || `${backendUrl}/api/auth/callback`;
+    
+    console.log('📧 Sending magic link to authorized user:', adminUser.name, normalizedEmail);
     const { data, error } = await supabaseAuth.auth.signInWithOtp({
-      phone: formattedPhone,
+      email: normalizedEmail,
+      options: {
+        emailRedirectTo: redirectTo,
+      },
     });
     
     if (error) {
-      console.error('❌ Error sending OTP:', error);
+      console.error('❌ Error sending magic link:', error);
       console.error('   Error details:', JSON.stringify(error, null, 2));
       return res.status(400).json({ 
-        error: error.message || 'Failed to send OTP. Please check your phone number and try again.' 
+        error: error.message || 'Failed to send magic link. Please check your email address and try again.' 
       });
     }
     
-    console.log('✅ OTP request successful. Supabase response:', {
+    console.log('✅ Magic link request successful. Supabase response:', {
       message: data?.message,
       hasData: !!data,
-      hasUser: !!data?.user
     });
     
     res.json({ 
       success: true, 
-      message: 'OTP sent to your phone',
+      message: 'Magic link sent to your email. Please check your inbox.',
       // Optionally return user info (without sensitive data)
       user: {
         name: adminUser.name,
@@ -119,59 +81,109 @@ router.post('/request-otp', async (req, res, next) => {
       }
     });
   } catch (error) {
-    console.error('❌ Unexpected error in request-otp:', error);
+    console.error('❌ Unexpected error in request-magic-link:', error);
     next(error);
   }
 });
 
-// Verify OTP
-router.post('/verify-otp', async (req, res, next) => {
+// Handle magic link callback (when user clicks the link in email)
+router.get('/callback', async (req, res, next) => {
   try {
-    const { phone, token } = req.body;
+    const { token_hash, type, email } = req.query;
     
-    if (!phone || !token) {
-      return res.status(400).json({ error: 'Phone number and OTP token are required' });
+    if (type === 'email' && token_hash) {
+      // Verify the token from the magic link
+      const { data, error } = await supabaseAuth.auth.verifyOtp({
+        token_hash,
+        type: 'email',
+      });
+      
+      if (error) {
+        console.error('❌ Magic link verification failed:', error);
+        return res.redirect(`/?error=${encodeURIComponent(error.message)}`);
+      }
+      
+      if (data.session && data.user) {
+        // Get admin user info from database
+        const normalizedEmail = email?.toLowerCase().trim();
+        const { data: adminUser } = await supabase
+          .from('admin_users')
+          .select('id, email, name, role, active')
+          .eq('email', normalizedEmail)
+          .single();
+        
+        if (adminUser && adminUser.active) {
+          console.log('✅ User authenticated via magic link:', adminUser.name, normalizedEmail);
+          
+          // Redirect to frontend with session tokens
+          // Frontend will extract tokens from URL and store them
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+          const redirectUrl = new URL('/auth/callback', frontendUrl);
+          redirectUrl.searchParams.set('access_token', data.session.access_token);
+          redirectUrl.searchParams.set('refresh_token', data.session.refresh_token);
+          redirectUrl.searchParams.set('expires_at', data.session.expires_at);
+          
+          return res.redirect(redirectUrl.toString());
+        } else {
+          return res.redirect(`/?error=${encodeURIComponent('User not found or inactive')}`);
+        }
+      }
     }
     
-    const formattedPhone = normalizePhoneNumber(phone);
-    console.log('🔐 Verifying OTP for phone:', formattedPhone);
+    return res.redirect(`/?error=${encodeURIComponent('Invalid magic link')}`);
+  } catch (error) {
+    console.error('❌ Error in magic link callback:', error);
+    return res.redirect(`/?error=${encodeURIComponent('Authentication error')}`);
+  }
+});
+
+// Verify session from frontend (after magic link redirect)
+router.post('/verify-session', async (req, res, next) => {
+  try {
+    const { access_token } = req.body;
     
-    // Verify OTP with Supabase
-    const { data, error } = await supabaseAuth.auth.verifyOtp({
-      phone: formattedPhone,
-      token: token,
-      type: 'sms',
-    });
+    if (!access_token) {
+      return res.status(400).json({ error: 'Access token is required' });
+    }
     
-    if (error) {
-      console.error('❌ OTP verification failed:', error);
-      return res.status(400).json({ error: error.message || 'Invalid OTP' });
+    // Verify token and get user
+    const { data: { user }, error } = await supabaseAuth.auth.getUser(access_token);
+    
+    if (error || !user) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
     }
     
     // Get admin user info from database
+    const normalizedEmail = user.email?.toLowerCase().trim();
     const { data: adminUser } = await supabase
       .from('admin_users')
-      .select('id, phone_number, name, role, active')
-      .eq('phone_number', formattedPhone)
+      .select('id, email, name, role, active')
+      .eq('email', normalizedEmail)
       .single();
     
-    console.log('✅ User authenticated:', adminUser?.name, formattedPhone);
+    if (!adminUser || !adminUser.active) {
+      return res.status(403).json({ error: 'User not found or inactive' });
+    }
     
-    // Return session + user info
+    console.log('✅ Session verified for user:', adminUser.name, normalizedEmail);
+    
+    // Get full session
+    const { data: { session } } = await supabaseAuth.auth.getSession();
+    
     res.json({
       success: true,
       session: {
-        access_token: data.session.access_token,
-        refresh_token: data.session.refresh_token,
-        expires_at: data.session.expires_at,
-        expires_in: data.session.expires_in,
+        access_token: access_token,
+        refresh_token: session?.refresh_token,
+        expires_at: session?.expires_at,
+        expires_in: session?.expires_in,
       },
       user: {
-        id: adminUser?.id,
-        phone: formattedPhone,
-        name: adminUser?.name,
-        role: adminUser?.role,
-        supabase_user_id: data.user?.id
+        id: adminUser.id,
+        email: normalizedEmail,
+        name: adminUser.name,
+        role: adminUser.role,
+        supabase_user_id: user.id
       },
     });
   } catch (error) {
@@ -198,10 +210,11 @@ router.get('/me', async (req, res, next) => {
     }
     
     // Get admin user info from database
+    const normalizedEmail = user.email?.toLowerCase().trim();
     const { data: adminUser } = await supabase
       .from('admin_users')
-      .select('id, phone_number, name, role, active')
-      .eq('phone_number', user.phone)
+      .select('id, email, name, role, active')
+      .eq('email', normalizedEmail)
       .single();
     
     if (!adminUser || !adminUser.active) {
@@ -211,7 +224,7 @@ router.get('/me', async (req, res, next) => {
     res.json({
       user: {
         id: adminUser.id,
-        phone: user.phone,
+        email: user.email,
         name: adminUser.name,
         role: adminUser.role,
         supabase_user_id: user.id
@@ -228,4 +241,3 @@ router.post('/logout', async (req, res) => {
 });
 
 export default router;
-

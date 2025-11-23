@@ -154,7 +154,7 @@ export const updateScreener = (id, data) =>
 export const deleteScreener = (id) =>
   api.delete(`/screeners/${id}`).then(res => res.data);
 
-// Admin Users (Phone Numbers)
+// Admin Users (Emails)
 export const getAdminUsers = (params) =>
   api.get('/admin-users', { params }).then(res => res.data);
 
