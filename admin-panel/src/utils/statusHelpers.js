@@ -1,31 +1,40 @@
 /**
- * Check if any test has failed (returns "F")
+ * Check if any test has failed (returns "F" or "FAIL")
  * @param {Object} student - Student screening data
- * @returns {boolean} - true if any test has "F"
+ * @returns {boolean} - true if any test has "F" or "FAIL"
  */
 export function hasFailedTest(student) {
+  // Helper to check if a value indicates failure
+  const isFail = (value) => {
+    if (!value) return false;
+    const normalized = value.toString().toUpperCase().trim();
+    return normalized === 'F' || normalized === 'FAIL';
+  };
+
   return (
-    student.vision_initial_right === 'F' || 
-    student.vision_initial_left === 'F' ||
-    student.vision_rescreen_right === 'F' || 
-    student.vision_rescreen_left === 'F' ||
+    isFail(student.vision_initial_right) || 
+    isFail(student.vision_initial_left) ||
+    isFail(student.vision_rescreen_right) || 
+    isFail(student.vision_rescreen_left) ||
+    isFail(student.vision_overall) ||
     // Check hearing frequencies (any frequency with "F")
-    student.hearing_initial_right_1000 === 'F' ||
-    student.hearing_initial_right_2000 === 'F' ||
-    student.hearing_initial_right_4000 === 'F' ||
-    student.hearing_initial_left_1000 === 'F' ||
-    student.hearing_initial_left_2000 === 'F' ||
-    student.hearing_initial_left_4000 === 'F' ||
-    student.hearing_rescreen_right_1000 === 'F' ||
-    student.hearing_rescreen_right_2000 === 'F' ||
-    student.hearing_rescreen_right_4000 === 'F' ||
-    student.hearing_rescreen_left_1000 === 'F' ||
-    student.hearing_rescreen_left_2000 === 'F' ||
-    student.hearing_rescreen_left_4000 === 'F' ||
-    student.acanthosis_initial === 'F' || 
-    student.acanthosis_rescreen === 'F' ||
-    student.scoliosis_initial === 'F' || 
-    student.scoliosis_rescreen === 'F'
+    isFail(student.hearing_initial_right_1000) ||
+    isFail(student.hearing_initial_right_2000) ||
+    isFail(student.hearing_initial_right_4000) ||
+    isFail(student.hearing_initial_left_1000) ||
+    isFail(student.hearing_initial_left_2000) ||
+    isFail(student.hearing_initial_left_4000) ||
+    isFail(student.hearing_rescreen_right_1000) ||
+    isFail(student.hearing_rescreen_right_2000) ||
+    isFail(student.hearing_rescreen_right_4000) ||
+    isFail(student.hearing_rescreen_left_1000) ||
+    isFail(student.hearing_rescreen_left_2000) ||
+    isFail(student.hearing_rescreen_left_4000) ||
+    isFail(student.hearing_overall) ||
+    isFail(student.acanthosis_initial) || 
+    isFail(student.acanthosis_rescreen) ||
+    isFail(student.scoliosis_initial) || 
+    isFail(student.scoliosis_rescreen)
   );
 }
 
