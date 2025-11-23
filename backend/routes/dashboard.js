@@ -7,6 +7,8 @@ router.get('/', async (req, res, next) => {
   try {
     const { school = 'all', startDate, endDate } = req.query;
     
+    console.log('📊 Dashboard query:', { school, startDate, endDate });
+    
     // Build query
     let query = supabase
       .from('screening_results')
@@ -30,6 +32,12 @@ router.get('/', async (req, res, next) => {
     if (school !== 'all') query = query.eq('student_school', school);
     
     const { data: results, error } = await query;
+    
+    console.log('📊 Dashboard results:', { 
+      count: results?.length || 0, 
+      error: error?.message,
+      sample: results?.slice(0, 2)
+    });
     
     if (error) throw error;
     

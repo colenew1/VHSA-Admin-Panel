@@ -188,13 +188,38 @@ router.get('/data', async (req, res, next) => {
           }
         });
         console.log(`✅ Found ${screeningData.length} screening records for ${Object.keys(screeningMap).length} students${year ? ` (year: ${year})` : ''}`);
+        if (year && Object.keys(screeningMap).length > 0) {
+          console.log(`   Sample keys: ${Object.keys(screeningMap).slice(0, 3).join(', ')}`);
+        }
       }
     }
+
+    console.log(`📊 Transforming ${studentsData.length} students, screening map has ${Object.keys(screeningMap).length} entries`);
 
     // Transform data - start with students, join with screening_results
     const transformedData = studentsData.map((student, index) => {
       // Get screening data for this student (may be null if not screened)
-      const screeningRow = screeningMap[student.unique_id] || null;
+      // When year filter is active, keys are stored as `${uniqueId}_${rowYear}` where rowYear comes from the data
+      // Since the query filters by created_at for the specified year, rowYear should match the query year
+      let screeningRow = null;
+      if (year) {
+        // Try year-specific key first (using query year - should match rowYear from filtered data)
+        screeningRow = screeningMap[`${student.unique_id}_${year}`] || null;
+        // Fallback: if not found, try to find any record for this student (in case rowYear doesn't match)
+        if (!screeningRow) {
+          const matchingKey = Object.keys(screeningMap).find(key => key.startsWith(`${student.unique_id}_`));
+          if (matchingKey) {
+            screeningRow = screeningMap[matchingKey];
+          }
+        }
+        // Final fallback: try simple unique_id (in case year filter wasn't applied correctly)
+        if (!screeningRow) {
+          screeningRow = screeningMap[student.unique_id] || null;
+        }
+      } else {
+        // No year filter - use simple unique_id lookup
+        screeningRow = screeningMap[student.unique_id] || null;
+      }
       
       // If date filters are applied and student has no screening in date range, they won't appear
       // But we want to show them as "not started" - so we include them anyway
