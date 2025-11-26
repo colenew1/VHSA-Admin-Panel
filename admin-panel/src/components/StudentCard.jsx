@@ -322,11 +322,24 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
   const remainingTests = getRemainingTests(student);
   const rescreenStatus = getRescreenStatus(student);
   
+  // Determine if rescreens are pending (failed but not rescreened yet)
+  const hasPendingRescreens = rescreenStatus.pending.length > 0;
+  // All rescreens done (no pending)
+  const allRescreensDone = rescreenStatus.needed.length > 0 && rescreenStatus.pending.length === 0;
+  // All rescreens passed
+  const allRescreensPassed = allRescreensDone && rescreenStatus.rescreenFailed.length === 0;
+  
+  // Card should be purple if complete but has pending rescreens
+  const needsRescreenHighlight = status === 'completed' && hasPendingRescreens;
+  // Or if screenings are done but rescreens pending
+  const isRescreenPending = hasFailed && hasPendingRescreens;
+  
   const borderColors = {
     not_started: 'border-gray-200 hover:border-gray-400',
     completed: 'border-green-200 hover:border-green-400',
     incomplete: 'border-amber-200 hover:border-amber-400',
     absent: 'border-blue-200 hover:border-blue-400',
+    rescreen_needed: 'border-purple-300 hover:border-purple-400',
   };
   
   const bgColors = {
@@ -334,7 +347,14 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
     completed: 'bg-green-50/50',
     incomplete: 'bg-amber-50/50',
     absent: 'bg-blue-50/50',
+    rescreen_needed: 'bg-purple-50',
   };
+  
+  // Determine visual status for card styling
+  const visualStatus = isRescreenPending ? 'rescreen_needed' : status;
+  
+  // Show red left border only if failed AND rescreens not all passed
+  const showFailedBorder = hasFailed && !allRescreensPassed;
   
   const testLabels = { V: 'Vision', H: 'Hearing', A: 'AN', S: 'Scoliosis' };
   
@@ -342,10 +362,10 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
     <div
       onClick={onClick}
       className={`
-        ${bgColors[status]} ${borderColors[status]}
+        ${bgColors[visualStatus]} ${borderColors[visualStatus]}
         border-2 rounded-lg p-3 cursor-pointer transition-all duration-200
         ${isSelected ? 'ring-2 ring-blue-500 shadow-lg' : 'hover:shadow-md'}
-        ${hasFailed ? 'border-l-4 border-l-red-500' : ''}
+        ${showFailedBorder ? 'border-l-4 border-l-red-500' : ''}
       `}
     >
       <div className="flex items-start justify-between gap-2 mb-2">
@@ -378,7 +398,8 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
         </div>
       )}
       
-      {hasFailed && failedTests.length > 0 && (
+      {/* Only show Failed section if not all rescreens passed */}
+      {hasFailed && failedTests.length > 0 && !allRescreensPassed && (
         <div className="mt-2 flex items-center gap-1 flex-wrap">
           <span className="text-xs text-red-600 font-medium">Failed:</span>
           {failedTests.map(test => (
