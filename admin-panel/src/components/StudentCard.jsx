@@ -23,10 +23,31 @@ function formatVision(value) {
 }
 
 /**
+ * Check if student turned 4 by September 1st based on their DOB
+ * Returns true if birthday is on or before September 1st (month/day only)
+ */
+function turned4BySept1(dob) {
+  if (!dob) return true; // Default to required if no DOB
+  
+  const birthDate = new Date(dob);
+  const month = birthDate.getMonth() + 1; // getMonth() is 0-indexed
+  const day = birthDate.getDate();
+  
+  // If born Jan-Aug, they turned 4 before Sept 1 → Required
+  if (month <= 8) return true;
+  
+  // If born Sept 1, they turned 4 on Sept 1 → Required
+  if (month === 9 && day === 1) return true;
+  
+  // If born Sept 2-30 or Oct-Dec, they turned 4 after Sept 1 → Not required
+  return false;
+}
+
+/**
  * Calculate which tests are state-required based on grade/status/gender
  */
 function getStateRequiredTests(student) {
-  const { grade, status, gender } = student;
+  const { grade, status, gender, dob } = student;
   const isNew = status === 'New';
   
   const required = {
@@ -38,7 +59,13 @@ function getStateRequiredTests(student) {
   
   if (grade === 'Pre-K (3)') {
     // No required tests
-  } else if (grade === 'Pre-K (4)' || grade === 'Kindergarten') {
+  } else if (grade === 'Pre-K (4)') {
+    // Only required if turned 4 by September 1st
+    if (turned4BySept1(dob)) {
+      required.vision = true;
+      required.hearing = true;
+    }
+  } else if (grade === 'Kindergarten') {
     required.vision = true;
     required.hearing = true;
   } else if (grade === '1st') {
@@ -82,45 +109,50 @@ function getStateRequiredTests(student) {
 /**
  * Status badge component
  */
-function StatusBadge({ status, hasFailed, rescreenStatus }) {
-  const statusConfig = {
-    not_started: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Not Started' },
-    completed: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300', label: 'Complete' },
-    incomplete: { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300', label: 'Incomplete' },
-    absent: { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300', label: 'Absent' },
-  };
+function StatusBadge({ status, hasFailed, rescreenStatus, allInitialsDone }) {
+  // Determine rescreen states
+  const hasPendingRescreens = rescreenStatus?.pending?.length > 0;
+  const hadFailedTests = rescreenStatus?.needed?.length > 0;
+  const allRescreensDone = hadFailedTests && rescreenStatus?.pending?.length === 0;
   
-  const config = statusConfig[status] || statusConfig.not_started;
+  // Simplified badge logic:
+  // 1. "Incomplete" - initial screenings not done
+  // 2. "Needs Rescreen" - all initials done, some failed, rescreens pending
+  // 3. "Complete" - all done (show "Rescreened" tag if went through rescreen)
   
-  // Determine rescreen badge state
-  const hasPendingRescreens = rescreenStatus?.pending?.length > 0; // Some rescreens still needed
-  const hadFailedTests = rescreenStatus?.needed?.length > 0; // Had tests that failed
-  const allRescreensDone = hadFailedTests && rescreenStatus?.pending?.length === 0; // All rescreens completed
+  let primaryBadge = null;
+  let secondaryBadge = null;
+  
+  if (status === 'not_started') {
+    primaryBadge = { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Not Started' };
+  } else if (status === 'absent') {
+    primaryBadge = { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300', label: 'Absent' };
+  } else if (allInitialsDone && hasPendingRescreens) {
+    // All initials done but needs rescreen - show ONLY "Needs Rescreen"
+    primaryBadge = { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-300', label: 'Needs Rescreen' };
+  } else if (status === 'incomplete') {
+    // Still doing initial screenings
+    primaryBadge = { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300', label: 'Incomplete' };
+  } else if (status === 'completed') {
+    primaryBadge = { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300', label: 'Complete' };
+    // Add "Rescreened" tag if they went through rescreen process
+    if (allRescreensDone) {
+      secondaryBadge = { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300', label: 'Rescreened' };
+    }
+  }
+  
+  if (!primaryBadge) {
+    primaryBadge = { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Unknown' };
+  }
   
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
-      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text} border ${config.border}`}>
-        {config.label}
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className={`px-2.5 py-1 rounded-full text-sm font-medium ${primaryBadge.bg} ${primaryBadge.text} border ${primaryBadge.border}`}>
+        {primaryBadge.label}
       </span>
-      
-      {/* Show FAILED if any initial test failed and rescreens not all done yet */}
-      {hasFailed && !allRescreensDone && (
-        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">
-          FAILED
-        </span>
-      )}
-      
-      {/* Rescreen Needed - show while ANY rescreens are pending */}
-      {hasPendingRescreens && (
-        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 border border-purple-300">
-          Rescreen Needed
-        </span>
-      )}
-      
-      {/* Rescreened - only show when ALL rescreens are complete */}
-      {allRescreensDone && (
-        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-300">
-          Rescreened
+      {secondaryBadge && (
+        <span className={`px-2.5 py-1 rounded-full text-sm font-medium ${secondaryBadge.bg} ${secondaryBadge.text} border ${secondaryBadge.border}`}>
+          {secondaryBadge.label}
         </span>
       )}
     </div>
@@ -370,23 +402,26 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
         ${showFailedBorder ? 'border-l-4 border-l-red-500' : ''}
       `}
     >
-      <div className="flex items-start justify-between gap-2 mb-2">
-        <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-gray-900 truncate">
-            {student.last_name}, {student.first_name}
-          </h3>
-          <p className="text-xs text-gray-500">
-            {student.grade} • {student.teacher || 'No Teacher'}
-          </p>
-        </div>
-        <StatusBadge status={status} hasFailed={hasFailed} rescreenStatus={rescreenStatus} />
-      </div>
+      {/* Row 1: Name only - full width */}
+      <h3 className="font-semibold text-gray-900 truncate text-base mb-1">
+        {student.last_name}, {student.first_name}
+      </h3>
       
-      <div className="flex items-center gap-3 text-xs text-gray-500">
+      {/* Row 2: Grade, Teacher, ID */}
+      <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+        <span className="font-medium">{student.grade}</span>
+        <span>•</span>
+        <span className="truncate">{student.teacher || 'No Teacher'}</span>
+        <span>•</span>
         <span>ID: {student.unique_id || student.student_id || '—'}</span>
         {student.glasses_or_contacts === 'Yes' && (
-          <span className="px-1.5 py-0.5 bg-gray-100 rounded">👓</span>
+          <span className="px-1 bg-gray-100 rounded">👓</span>
         )}
+      </div>
+      
+      {/* Row 3: Status badges - own line */}
+      <div className="mb-2">
+        <StatusBadge status={status} hasFailed={hasFailed} rescreenStatus={rescreenStatus} allInitialsDone={allInitialScreeningsDone} />
       </div>
       
       {remainingTests.length > 0 && status !== 'completed' && (
@@ -451,6 +486,10 @@ export function StudentCardExpanded({
   const hasFailed = hasFailedTest(student);
   const stateRequired = getStateRequiredTests(student);
   const rescreenStatus = getRescreenStatus(student);
+  const remainingTests = getRemainingTests(student);
+  
+  // Check if all initial screenings are done
+  const allInitialsDone = remainingTests.length === 0 && status !== 'not_started';
   
   // Check which test categories failed
   const visionFailed = isTestFail(student.vision_overall) || isTestFail(student.vision_initial_right) || isTestFail(student.vision_initial_left);
@@ -473,7 +512,7 @@ export function StudentCardExpanded({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <StatusBadge status={status} hasFailed={hasFailed} rescreenStatus={rescreenStatus} />
+            <StatusBadge status={status} hasFailed={hasFailed} rescreenStatus={rescreenStatus} allInitialsDone={allInitialsDone} />
             <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
