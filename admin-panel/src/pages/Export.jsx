@@ -1,1209 +1,788 @@
-import { useState, useEffect } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getSchools, exportStickers, getStickerPreview, getReportingData, updateReportingData, exportReportingPDF, searchStudentsForExport, exportStudentsCSV } from '../api/client';
-import EditableCell from '../components/EditableCell';
-import ConfirmDialog from '../components/ConfirmDialog';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getSchools, getScreeningData } from '../api/client';
+import { getRowStatus, hasFailedTest, formatDate } from '../utils/statusHelpers';
 import { useToast } from '../components/Toast';
+
+// Grade order for sorting
+const GRADE_ORDER = ['Pre-K (3)', 'Pre-K (4)', 'Kindergarten', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
+
+// Calculate what tests a student needs based on grade/status/gender
+function getTestsNeeded(student) {
+  const { grade, status, gender } = student;
+  const tests = [];
+  const isNew = status === 'New';
+  
+  // V = Vision, H = Hearing, A = Acanthosis, S = Scoliosis
+  if (grade === 'Pre-K (3)') return ''; // No tests required
+  if (grade === 'Pre-K (4)') return 'V H';
+  if (grade === 'Kindergarten') return 'V H';
+  if (grade === '1st') return 'V H A';
+  if (grade === '2nd') return isNew ? 'V H A' : '';
+  if (grade === '3rd') return 'V H A';
+  if (grade === '4th') return isNew ? 'V H A' : '';
+  if (grade === '5th') return gender === 'Female' ? 'V H A S' : 'V H A';
+  if (grade === '6th') return isNew ? 'V H A' : '';
+  if (grade === '7th') return gender === 'Female' ? 'V H A S' : 'V H A';
+  if (grade === '8th') return isNew ? (gender === 'Male' ? 'V H A S' : 'V H A') : '';
+  if (['9th', '10th', '11th', '12th'].includes(grade)) return isNew ? 'V H A' : '';
+  
+  return '';
+}
+
+// Check if a test value indicates "Pass"
+function isPass(value) {
+  if (!value) return false;
+  const v = String(value).toUpperCase().trim();
+  return v === 'P' || v === 'PASS' || (v.startsWith('20/') && parseInt(v.split('/')[1]) <= 30);
+}
+
+// Check if a test value indicates "Fail"
+function isFail(value) {
+  if (!value) return false;
+  const v = String(value).toUpperCase().trim();
+  return v === 'F' || v === 'FAIL' || (v.startsWith('20/') && parseInt(v.split('/')[1]) > 40);
+}
 
 export default function Export() {
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState('sticker');
-  
-  // Year filter (shared across both tabs)
+  const [activeTab, setActiveTab] = useState('cards');
   const [year, setYear] = useState(new Date().getFullYear().toString());
-  
-  // Student Export tab state
-  const [studentExportSchool, setStudentExportSchool] = useState('all');
-  const [studentExportGrade, setStudentExportGrade] = useState('');
-  const [studentExportStatus, setStudentExportStatus] = useState('all');
-  const [studentExportSearch, setStudentExportSearch] = useState('');
-  const [studentExportStartDate, setStudentExportStartDate] = useState('');
-  const [studentExportEndDate, setStudentExportEndDate] = useState('');
-  const [studentExportResults, setStudentExportResults] = useState(null);
-  const [shouldSearchStudents, setShouldSearchStudents] = useState(false);
-  const [isExportingStudents, setIsExportingStudents] = useState(false);
-  
-  // Sticker tab state
-  const [selectedSchool, setSelectedSchool] = useState('');
-  const [statusFilters, setStatusFilters] = useState({
-    incomplete: false,
-    completed: false,
-    not_started: false,
-    absent: false
-  });
-  const [stickerPreview, setStickerPreview] = useState(null);
-  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  
-  // Reporting tab state
-  const [reportSchool, setReportSchool] = useState('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [reportData, setReportData] = useState(null);
-  const [shouldFetch, setShouldFetch] = useState(false);
-  const [notes, setNotes] = useState('');
-  const [isNotesExpanded, setIsNotesExpanded] = useState(false);
-  const [isEditingReport, setIsEditingReport] = useState(false);
-  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
-  
-  const queryClient = useQueryClient();
+  const [school, setSchool] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all'); // all, not_started, incomplete, completed
   
   // Fetch schools
   const { data: schoolsData } = useQuery({
     queryKey: ['schools'],
     queryFn: getSchools,
   });
-  
   const schools = schoolsData?.schools || [];
   
-  // Fetch reporting data
-  const { data: reportingData, isLoading: loadingReporting } = useQuery({
-    queryKey: ['reporting', reportSchool, startDate, endDate, year],
-    queryFn: () => getReportingData({
-      school: reportSchool,
-      startDate: startDate || undefined,
-      endDate: endDate || undefined,
-      year: year || undefined,
+  // Fetch screening data
+  const { data: screeningData, isLoading, refetch } = useQuery({
+    queryKey: ['export-screening', school, year],
+    queryFn: () => getScreeningData({
+      school: school,
+      year: year,
+      startDate: `${year}-01-01`,
+      endDate: `${year}-12-31`,
+      limit: 5000,
+      offset: 0,
     }),
-    enabled: shouldFetch, // Only fetch when Generate Report is clicked
+    enabled: school !== '',
+    refetchOnWindowFocus: false,
   });
   
-  // Fetch student export data
-  const { data: studentExportData, isLoading: loadingStudentExport } = useQuery({
-    queryKey: ['studentExport', studentExportSchool, studentExportGrade, studentExportStatus, studentExportSearch, studentExportStartDate, studentExportEndDate, year],
-    queryFn: () => searchStudentsForExport({
-      school: studentExportSchool,
-      grade: studentExportGrade || undefined,
-      status: studentExportStatus,
-      search: studentExportSearch || undefined,
-      startDate: studentExportStartDate || undefined,
-      endDate: studentExportEndDate || undefined,
-      year: year || undefined,
-    }),
-    enabled: shouldSearchStudents, // Only fetch when Search is clicked
-  });
+  const allStudents = screeningData?.data || [];
   
-  // Update results when data changes
-  useEffect(() => {
-    if (studentExportData) {
-      setStudentExportResults(studentExportData);
-    }
-  }, [studentExportData]);
+  // Filter students by status
+  const filteredStudents = useMemo(() => {
+    if (statusFilter === 'all') return allStudents;
+    return allStudents.filter(s => getRowStatus(s) === statusFilter);
+  }, [allStudents, statusFilter]);
   
-  // Store original data for cancel
-  const [originalReportData, setOriginalReportData] = useState(null);
-  
-  // Update reportData when reportingData changes
-  useEffect(() => {
-    if (reportingData) {
-      setReportData(reportingData);
-      setOriginalReportData(JSON.parse(JSON.stringify(reportingData))); // Deep copy
-    }
-  }, [reportingData]);
-  
-  // Update reporting mutation
-  const updateReportingMutation = useMutation({
-    mutationFn: updateReportingData,
-    onSuccess: () => {
-      toast.success('Reporting data saved successfully!');
-      setIsEditingReport(false);
-      setShowSaveConfirm(false);
-    },
-    onError: (error) => {
-      toast.error(`Error saving: ${error.response?.data?.error || error.message}`);
-      setShowSaveConfirm(false);
-    },
-  });
-  
-  // Handle status filter toggle
-  const handleStatusFilterToggle = (status) => {
-    setStatusFilters(prev => ({
-      ...prev,
-      [status]: !prev[status]
-    }));
-  };
-  
-  // Handle preview generation
-  const handlePreviewStickers = async () => {
-    if (!selectedSchool) {
-      toast.warning('Please select a school');
-      return;
-    }
-    
-    // Check if at least one status is selected
-    const selectedStatuses = Object.entries(statusFilters)
-      .filter(([_, selected]) => selected)
-      .map(([status, _]) => status);
-    
-    if (selectedStatuses.length === 0) {
-      toast.warning('Please select at least one status filter');
-      return;
-    }
-    
-    setIsLoadingPreview(true);
-    try {
-      const data = await getStickerPreview({
-        school: selectedSchool,
-        status: selectedStatuses.join(','),
-        year: year || undefined
-      });
-      setStickerPreview(data.stickers || []);
-    } catch (error) {
-      toast.error(`Error generating preview: ${error.response?.data?.error || error.message}`);
-    } finally {
-      setIsLoadingPreview(false);
-    }
-  };
-  
-  // Handle sticker data edit
-  const handleStickerCellChange = (index, field, value) => {
-    if (!stickerPreview) return;
-    
-    const updated = [...stickerPreview];
-    updated[index] = {
-      ...updated[index],
-      [field]: value
+  // Calculate reporting statistics
+  const reportStats = useMemo(() => {
+    const stats = {
+      total: 0,
+      byGrade: {}
     };
-    setStickerPreview(updated);
-  };
-  
-  // Handle sticker export
-  const handleExportStickers = async () => {
-    if (!selectedSchool) {
-      toast.warning('Please select a school');
-      return;
-    }
     
-    if (!stickerPreview || stickerPreview.length === 0) {
-      toast.warning('Please generate a preview first');
-      return;
-    }
-    
-    setIsExporting(true);
-    try {
-      const selectedStatuses = Object.entries(statusFilters)
-        .filter(([_, selected]) => selected)
-        .map(([status, _]) => status);
+    allStudents.forEach(student => {
+      const grade = student.grade || 'Unknown';
+      if (!stats.byGrade[grade]) {
+        stats.byGrade[grade] = {
+          grade,
+          total: 0,
+          vision: { screened: 0, passed: 0, failed: 0 },
+          hearing: { screened: 0, passed: 0, failed: 0 },
+          acanthosis: { screened: 0, passed: 0, failed: 0 },
+          scoliosis: { screened: 0, passed: 0, failed: 0 },
+          glasses: 0,
+        };
+      }
       
-      const blob = await exportStickers({
-        school: selectedSchool,
-        stickerData: stickerPreview,
-        status: selectedStatuses.join(','),
-        year: year || undefined
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `stickers-${selectedSchool.replace(/\s+/g, '-')}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      toast.error(`Error exporting stickers: ${error.response?.data?.error || error.message}`);
-    } finally {
-      setIsExporting(false);
-    }
-  };
-  
-  // Handle generate report
-  const handleGenerateReport = () => {
-    setShouldFetch(true);
-    queryClient.invalidateQueries(['reporting', reportSchool, startDate, endDate, year]);
-  };
-  
-  // Generate year options (last 6 years)
-  const currentYear = new Date().getFullYear();
-  const yearOptions = Array.from({ length: 6 }, (_, i) => currentYear - i);
-  
-  // Handle cell change in reporting table
-  const handleReportCellChange = (gradeIndex, field, subField, value) => {
-    if (!reportData) return;
-    
-    const updated = { ...reportData };
-    
-    if (gradeIndex === -1) {
-      // Summary row
-      if (subField) {
-        updated.summary[field][subField] = parseInt(value) || 0;
-      } else {
-        updated.summary[field] = parseInt(value) || 0;
+      const g = stats.byGrade[grade];
+      g.total++;
+      stats.total++;
+      
+      // Vision
+      if (student.vision_initial_right || student.vision_initial_left || student.vision_overall) {
+        g.vision.screened++;
+        if (isFail(student.vision_overall) || isFail(student.vision_initial_right) || isFail(student.vision_initial_left)) {
+          g.vision.failed++;
+        } else if (isPass(student.vision_overall) || student.vision_initial_right || student.vision_initial_left) {
+          g.vision.passed++;
+        }
       }
-    } else {
-      // Grade row
-      if (subField) {
-        updated.byGrade[gradeIndex][field][subField] = parseInt(value) || 0;
-      } else {
-        updated.byGrade[gradeIndex][field] = parseInt(value) || 0;
+      
+      // Hearing
+      const hasHearing = student.hearing_initial_right_1000 || student.hearing_initial_left_1000 || student.hearing_overall;
+      if (hasHearing) {
+        g.hearing.screened++;
+        const hearingFail = isFail(student.hearing_overall) ||
+          isFail(student.hearing_initial_right_1000) || isFail(student.hearing_initial_right_2000) || isFail(student.hearing_initial_right_4000) ||
+          isFail(student.hearing_initial_left_1000) || isFail(student.hearing_initial_left_2000) || isFail(student.hearing_initial_left_4000);
+        if (hearingFail) {
+          g.hearing.failed++;
+        } else {
+          g.hearing.passed++;
+        }
       }
-    }
+      
+      // Acanthosis
+      if (student.acanthosis_initial || student.acanthosis_rescreen) {
+        g.acanthosis.screened++;
+        if (isFail(student.acanthosis_initial) || isFail(student.acanthosis_rescreen)) {
+          g.acanthosis.failed++;
+        } else {
+          g.acanthosis.passed++;
+        }
+      }
+      
+      // Scoliosis
+      if (student.scoliosis_initial || student.scoliosis_rescreen) {
+        g.scoliosis.screened++;
+        if (isFail(student.scoliosis_initial) || isFail(student.scoliosis_rescreen)) {
+          g.scoliosis.failed++;
+        } else {
+          g.scoliosis.passed++;
+        }
+      }
+      
+      // Glasses
+      if (student.glasses_or_contacts === 'Yes') {
+        g.glasses++;
+      }
+    });
     
-    setReportData(updated);
-  };
+    // Sort by grade order
+    const sortedGrades = Object.values(stats.byGrade).sort((a, b) => {
+      const aIdx = GRADE_ORDER.indexOf(a.grade);
+      const bIdx = GRADE_ORDER.indexOf(b.grade);
+      return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
+    });
+    
+    return { ...stats, byGrade: sortedGrades };
+  }, [allStudents]);
   
-  // Handle edit mode toggle
-  const handleEditReport = () => {
-    setIsEditingReport(true);
-  };
-  
-  // Handle cancel edit
-  const handleCancelEdit = () => {
-    setIsEditingReport(false);
-    // Reload original data to discard changes
-    if (originalReportData) {
-      setReportData(JSON.parse(JSON.stringify(originalReportData)));
-    }
-  };
-  
-  // Handle save reporting changes with confirmation
-  const handleSaveReporting = () => {
-    if (!reportData) return;
-    setShowSaveConfirm(true);
-  };
-  
-  // Confirm save
-  const handleConfirmSave = () => {
-    if (!reportData) return;
-    updateReportingMutation.mutate(reportData);
-    setIsEditingReport(false);
-    setShowSaveConfirm(false);
-  };
-  
-  // Handle student export search
-  const handleSearchStudents = () => {
-    setShouldSearchStudents(true);
-    queryClient.invalidateQueries(['studentExport', studentExportSchool, studentExportGrade, studentExportStatus, studentExportSearch, studentExportStartDate, studentExportEndDate, year]);
-  };
-  
-  // Handle export students as CSV
-  const handleExportStudentsCSV = async () => {
-    if (!studentExportResults || studentExportResults.count === 0) {
-      toast.warning('Please search for students first');
+  // Generate student cards PDF (8 per page)
+  const generateCardsPDF = () => {
+    if (filteredStudents.length === 0) {
+      toast.warning('No students to generate cards for');
       return;
     }
     
-    setIsExportingStudents(true);
-    try {
-      const blob = await exportStudentsCSV({
-        school: studentExportSchool,
-        grade: studentExportGrade || undefined,
-        status: studentExportStatus,
-        search: studentExportSearch || undefined,
-        startDate: studentExportStartDate || undefined,
-        endDate: studentExportEndDate || undefined,
-        year: year || undefined,
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const schoolName = studentExportSchool === 'all' ? 'All-Schools' : studentExportSchool.replace(/\s+/g, '-');
-      const dateStr = new Date().toISOString().split('T')[0];
-      a.download = `students-export-${schoolName}-${dateStr}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      toast.error(`Error exporting CSV: ${error.response?.data?.error || error.message}`);
-    } finally {
-      setIsExportingStudents(false);
-    }
+    // Create printable HTML
+    const cardsHTML = filteredStudents.map((student, idx) => {
+      const tests = getTestsNeeded(student);
+      return `
+        <div class="card">
+          <div class="card-header">
+            <span class="student-id">${student.unique_id || 'N/A'}</span>
+            <span class="grade">${student.grade || ''}</span>
+          </div>
+          <div class="student-name">${student.last_name}, ${student.first_name}</div>
+          <div class="teacher">Teacher: ${student.teacher || '—'}</div>
+          <div class="tests-section">
+            <div class="tests-label">Tests Needed:</div>
+            <div class="tests-boxes">
+              ${tests.includes('V') ? '<div class="test-box">V<br><small>Vision</small></div>' : ''}
+              ${tests.includes('H') ? '<div class="test-box">H<br><small>Hearing</small></div>' : ''}
+              ${tests.includes('A') ? '<div class="test-box">A<br><small>AN</small></div>' : ''}
+              ${tests.includes('S') ? '<div class="test-box">S<br><small>Spine</small></div>' : ''}
+              ${!tests ? '<div class="no-tests">No tests required</div>' : ''}
+            </div>
+          </div>
+          <div class="footer">VHSA Health Screening ${year}</div>
+        </div>
+      `;
+    }).join('');
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Student Cards - ${school === 'all' ? 'All Schools' : school}</title>
+        <style>
+          @page { size: letter; margin: 0.5in; }
+          @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; }
+          .cards-container {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            grid-template-rows: repeat(4, 1fr);
+            gap: 0.25in;
+            height: 10in;
+            page-break-after: always;
+          }
+          .cards-container:last-child { page-break-after: auto; }
+          .card {
+            border: 2px solid #333;
+            border-radius: 8px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            height: 2.25in;
+            background: white;
+          }
+          .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 4px;
+            margin-bottom: 6px;
+          }
+          .student-id { font-family: monospace; font-weight: bold; font-size: 14px; }
+          .grade { font-size: 12px; color: #666; }
+          .student-name { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
+          .teacher { font-size: 11px; color: #666; margin-bottom: 8px; }
+          .tests-section { flex: 1; }
+          .tests-label { font-size: 10px; font-weight: bold; color: #333; margin-bottom: 4px; }
+          .tests-boxes { display: flex; gap: 8px; }
+          .test-box {
+            width: 45px;
+            height: 45px;
+            border: 2px solid #333;
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: bold;
+          }
+          .test-box small { font-size: 8px; font-weight: normal; }
+          .no-tests { font-size: 11px; color: #666; font-style: italic; }
+          .footer { font-size: 9px; color: #999; text-align: right; margin-top: auto; }
+        </style>
+      </head>
+      <body>
+        ${(() => {
+          // Group cards into pages of 8
+          const pages = [];
+          for (let i = 0; i < filteredStudents.length; i += 8) {
+            const pageCards = cardsHTML.split('</div>\n        <div class="card">').slice(i, i + 8);
+            if (i === 0) {
+              pages.push(`<div class="cards-container">${pageCards.join('</div><div class="card">')}</div>`);
+            } else {
+              pages.push(`<div class="cards-container"><div class="card">${pageCards.join('</div><div class="card">')}</div>`);
+            }
+          }
+          return pages.join('');
+        })()}
+        <script>window.onload = () => window.print();</script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
   };
   
-  // Handle export reporting as PDF
-  const [isExportingPDF, setIsExportingPDF] = useState(false);
-  const handleExportReportingPDF = async () => {
-    if (!reportData) {
-      toast.warning('Please generate a report first');
+  // Export students as CSV
+  const exportStudentsCSV = () => {
+    if (filteredStudents.length === 0) {
+      toast.warning('No students to export');
       return;
     }
     
-    setIsExportingPDF(true);
-    try {
-      const blob = await exportReportingPDF({
-        reportData,
-        school: reportSchool,
-        startDate: startDate || undefined,
-        endDate: endDate || undefined,
-        year: year || undefined,
-        notes: notes || undefined
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const schoolName = reportSchool === 'all' ? 'All-Schools' : reportSchool.replace(/\s+/g, '-');
-      const dateStr = new Date().toISOString().split('T')[0];
-      a.download = `reporting-${schoolName}-${dateStr}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      toast.error(`Error exporting PDF: ${error.response?.data?.error || error.message}`);
-    } finally {
-      setIsExportingPDF(false);
-    }
+    const headers = [
+      'Student ID', 'First Name', 'Last Name', 'Grade', 'Gender', 'DOB', 
+      'School', 'Teacher', 'Screening Date', 'Status',
+      'Vision Right', 'Vision Left', 'Glasses',
+      'Hearing 1k R', 'Hearing 2k R', 'Hearing 4k R', 'Hearing 1k L', 'Hearing 2k L', 'Hearing 4k L',
+      'Acanthosis', 'Scoliosis', 'Notes'
+    ];
+    
+    const rows = filteredStudents.map(s => [
+      s.unique_id || '',
+      s.first_name || '',
+      s.last_name || '',
+      s.grade || '',
+      s.gender || '',
+      s.dob ? formatDate(s.dob) : '',
+      s.school || '',
+      s.teacher || '',
+      s.initial_screening_date ? formatDate(s.initial_screening_date) : '',
+      getRowStatus(s),
+      s.vision_initial_right || '',
+      s.vision_initial_left || '',
+      s.glasses_or_contacts || '',
+      s.hearing_initial_right_1000 || '',
+      s.hearing_initial_right_2000 || '',
+      s.hearing_initial_right_4000 || '',
+      s.hearing_initial_left_1000 || '',
+      s.hearing_initial_left_2000 || '',
+      s.hearing_initial_left_4000 || '',
+      s.acanthosis_initial || '',
+      s.scoliosis_initial || '',
+      (s.notes || '').replace(/[\n\r,]/g, ' ')
+    ]);
+    
+    const csvContent = [headers, ...rows].map(row => 
+      row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')
+    ).join('\n');
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `students-${school === 'all' ? 'all-schools' : school.replace(/\s+/g, '-')}-${year}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('CSV exported successfully');
   };
   
+  // Generate report PDF
+  const generateReportPDF = () => {
+    if (reportStats.total === 0) {
+      toast.warning('No data to generate report');
+      return;
+    }
+    
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Screening Report - ${school === 'all' ? 'All Schools' : school}</title>
+        <style>
+          @page { size: letter; margin: 0.75in; }
+          body { font-family: Arial, sans-serif; font-size: 12px; }
+          h1 { font-size: 20px; margin-bottom: 5px; }
+          .meta { color: #666; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th, td { border: 1px solid #333; padding: 6px 8px; text-align: center; }
+          th { background: #f0f0f0; font-weight: bold; }
+          .grade-col { text-align: left; font-weight: bold; }
+          .total-row { background: #e8f4ff; font-weight: bold; }
+          .section-header { background: #333; color: white; }
+          .sub-header { background: #f5f5f5; font-size: 10px; }
+        </style>
+      </head>
+      <body>
+        <h1>Vision, Hearing, Spinal & Acanthosis Screening Report</h1>
+        <div class="meta">
+          <strong>School:</strong> ${school === 'all' ? 'All Schools' : school}<br>
+          <strong>Year:</strong> ${year}<br>
+          <strong>Generated:</strong> ${new Date().toLocaleDateString()}
+        </div>
+        
+        <table>
+          <thead>
+            <tr class="section-header">
+              <th>Grade</th>
+              <th>Total</th>
+              <th colspan="2">Vision</th>
+              <th>Glasses</th>
+              <th colspan="2">Hearing</th>
+              <th colspan="2">Acanthosis</th>
+              <th colspan="2">Scoliosis</th>
+            </tr>
+            <tr class="sub-header">
+              <th></th>
+              <th>Students</th>
+              <th>Screened</th>
+              <th>Failed</th>
+              <th></th>
+              <th>Screened</th>
+              <th>Failed</th>
+              <th>Screened</th>
+              <th>Failed</th>
+              <th>Screened</th>
+              <th>Failed</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${reportStats.byGrade.map(g => `
+              <tr>
+                <td class="grade-col">${g.grade}</td>
+                <td>${g.total}</td>
+                <td>${g.vision.screened}</td>
+                <td>${g.vision.failed}</td>
+                <td>${g.glasses}</td>
+                <td>${g.hearing.screened}</td>
+                <td>${g.hearing.failed}</td>
+                <td>${g.acanthosis.screened}</td>
+                <td>${g.acanthosis.failed}</td>
+                <td>${g.scoliosis.screened}</td>
+                <td>${g.scoliosis.failed}</td>
+              </tr>
+            `).join('')}
+            <tr class="total-row">
+              <td class="grade-col">TOTAL</td>
+              <td>${reportStats.total}</td>
+              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.vision.screened, 0)}</td>
+              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.vision.failed, 0)}</td>
+              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.glasses, 0)}</td>
+              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.hearing.screened, 0)}</td>
+              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.hearing.failed, 0)}</td>
+              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.acanthosis.screened, 0)}</td>
+              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.acanthosis.failed, 0)}</td>
+              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.scoliosis.screened, 0)}</td>
+              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.scoliosis.failed, 0)}</td>
+            </tr>
+          </tbody>
+        </table>
+        
+        <script>window.onload = () => window.print();</script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+  
+  const yearOptions = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i);
   
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Export</h1>
-      
-      {/* Year Filter - Shared across both tabs */}
-      <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg p-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Record Created Year
-        </label>
-        <select
-          value={year}
-          onChange={(e) => {
-            setYear(e.target.value);
-            // Clear preview/data when year changes
-            setStickerPreview(null);
-            setReportData(null);
-            setShouldFetch(false);
-          }}
-          className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md text-sm"
-        >
-          {yearOptions.map(y => (
-            <option key={y} value={y.toString()}>{y}</option>
-          ))}
-        </select>
-        <p className="mt-2 text-xs text-gray-500">
-          Filter by the year the screening record was created in the database
-        </p>
-      </div>
-      
-      {/* Tabs */}
-      <div className="border-b border-gray-200 mb-6">
-        <nav className="flex gap-1">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-6xl mx-auto px-4 py-6">
+        {/* Header */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Export</h1>
+          <p className="text-sm text-gray-500">Generate student cards, reports, and data exports</p>
+        </div>
+        
+        {/* Global Filters */}
+        <div className="bg-white rounded-xl border border-gray-200 p-4 mb-6">
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">Year</label>
+              <select
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                {yearOptions.map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <label className="text-sm font-medium text-gray-700 block mb-1">School</label>
+              <select
+                value={school}
+                onChange={(e) => setSchool(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              >
+                <option value="all">All Schools</option>
+                {schools.map(s => (
+                  <option key={s.id} value={s.name}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+            <button
+              onClick={() => refetch()}
+              className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 flex items-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Refresh
+            </button>
+          </div>
+          {isLoading && (
+            <p className="text-sm text-gray-500 mt-2">Loading data...</p>
+          )}
+          {!isLoading && allStudents.length > 0 && (
+            <p className="text-sm text-gray-500 mt-2">
+              <span className="font-medium text-gray-900">{allStudents.length}</span> students loaded
+            </p>
+          )}
+        </div>
+        
+        {/* Tabs */}
+        <div className="flex gap-1 mb-6 bg-gray-100 rounded-lg p-1 w-fit">
           <button
-            onClick={() => setActiveTab('sticker')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'sticker'
-                ? 'text-blue-600 border-blue-600'
-                : 'text-gray-600 border-transparent hover:text-gray-900 hover:border-gray-300'
+            onClick={() => setActiveTab('cards')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              activeTab === 'cards' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Sticker
+            🏷️ Student Cards
           </button>
           <button
-            onClick={() => setActiveTab('reporting')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'reporting'
-                ? 'text-blue-600 border-blue-600'
-                : 'text-gray-600 border-transparent hover:text-gray-900 hover:border-gray-300'
+            onClick={() => setActiveTab('report')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              activeTab === 'report' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Reporting
+            📊 School Report
           </button>
           <button
             onClick={() => setActiveTab('students')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'students'
-                ? 'text-blue-600 border-blue-600'
-                : 'text-gray-600 border-transparent hover:text-gray-900 hover:border-gray-300'
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+              activeTab === 'students' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            Students
+            📋 Student Data
           </button>
-        </nav>
-      </div>
-      
-      {/* Sticker Tab */}
-      {activeTab === 'sticker' && (
-        <div className="space-y-6">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800 font-medium mb-2">
-              Template: <strong>Avery 5161</strong> (20 labels per sheet, 1" x 4" labels)
-            </p>
-            <p className="text-sm text-blue-800">
-              Each label contains: <strong>Student ID</strong>, <strong>Student Name</strong>, <strong>Grade</strong>, <strong>Tests Needed</strong>
-            </p>
-          </div>
-          
-          {/* Filters */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select School <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={selectedSchool}
-                  onChange={(e) => {
-                    setSelectedSchool(e.target.value);
-                    setStickerPreview(null); // Clear preview when school changes
-                  }}
-                  className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-md text-sm"
-                >
-                  <option value="">-- Select School --</option>
-                  {schools.map((school) => (
-                    <option key={school.id} value={school.name}>
-                      {school.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        </div>
+        
+        {/* Student Cards Tab */}
+        {activeTab === 'cards' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-2">Student Cards</h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Print cards for students to carry during screening. <strong>8 cards per page</strong> - designed to be cut with a paper cutter.
+                Each card shows the student's name, ID, grade, and which tests they need.
+              </p>
               
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status Filters
-                </label>
-                <div className="flex flex-wrap gap-3">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={statusFilters.not_started}
-                      onChange={() => handleStatusFilterToggle('not_started')}
-                      className="mr-2"
-                    />
-                    <span className="text-sm text-gray-700">Not Started</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={statusFilters.absent}
-                      onChange={() => handleStatusFilterToggle('absent')}
-                      className="mr-2"
-                    />
-                    <span className="text-sm text-gray-700">Absent</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={statusFilters.incomplete}
-                      onChange={() => handleStatusFilterToggle('incomplete')}
-                      className="mr-2"
-                    />
-                    <span className="text-sm text-gray-700">Incomplete</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={statusFilters.completed}
-                      onChange={() => handleStatusFilterToggle('completed')}
-                      className="mr-2"
-                    />
-                    <span className="text-sm text-gray-700">Completed</span>
-                  </label>
+              {/* Status Filter */}
+              <div className="mb-4">
+                <label className="text-sm font-medium text-gray-700 block mb-2">Filter by Status</label>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { value: 'all', label: 'All Students', count: allStudents.length },
+                    { value: 'not_started', label: 'Not Started', count: allStudents.filter(s => getRowStatus(s) === 'not_started').length },
+                    { value: 'incomplete', label: 'Incomplete', count: allStudents.filter(s => getRowStatus(s) === 'incomplete').length },
+                    { value: 'completed', label: 'Completed', count: allStudents.filter(s => getRowStatus(s) === 'completed').length },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setStatusFilter(opt.value)}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                        statusFilter === opt.value
+                          ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                          : 'bg-gray-100 text-gray-600 border-2 border-transparent hover:bg-gray-200'
+                      }`}
+                    >
+                      {opt.label} ({opt.count})
+                    </button>
+                  ))}
                 </div>
               </div>
               
-              <button
-                onClick={handlePreviewStickers}
-                disabled={!selectedSchool || isLoadingPreview}
-                className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoadingPreview ? 'Generating Preview...' : 'Preview Stickers'}
-              </button>
-            </div>
-          </div>
-          
-          {/* Preview/Edit Table */}
-          {stickerPreview && stickerPreview.length > 0 && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Preview & Edit ({stickerPreview.length} sticker{stickerPreview.length !== 1 ? 's' : ''})
-                </h2>
+              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                <div>
+                  <p className="text-sm text-gray-600">
+                    <span className="font-semibold text-gray-900">{filteredStudents.length}</span> cards will be generated
+                    ({Math.ceil(filteredStudents.length / 8)} page{Math.ceil(filteredStudents.length / 8) !== 1 ? 's' : ''})
+                  </p>
+                </div>
                 <button
-                  onClick={handleExportStickers}
-                  disabled={isExporting}
-                  className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={generateCardsPDF}
+                  disabled={filteredStudents.length === 0 || isLoading}
+                  className="px-6 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
                 >
-                  {isExporting ? 'Exporting PDF...' : 'Export PDF'}
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Print Cards
                 </button>
               </div>
               
-              <div className="overflow-x-auto border border-gray-300 rounded-lg">
-                <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">#</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Student ID</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Student Name</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Grade</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Tests Needed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stickerPreview.map((sticker, index) => (
-                      <tr key={index}>
-                        <td className="border border-gray-300 px-3 py-2">{index + 1}</td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          <EditableCell
-                            value={sticker.student_id || ''}
-                            onChange={(value) => handleStickerCellChange(index, 'student_id', value)}
-                            type="text"
-                            className="text-sm w-full font-mono"
-                          />
-                        </td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          <EditableCell
-                            value={sticker.student_name || ''}
-                            onChange={(value) => handleStickerCellChange(index, 'student_name', value)}
-                            type="text"
-                            className="text-sm w-full"
-                          />
-                        </td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          <EditableCell
-                            value={sticker.grade || ''}
-                            onChange={(value) => handleStickerCellChange(index, 'grade', value)}
-                            type="text"
-                            className="text-sm w-full"
-                          />
-                        </td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          <EditableCell
-                            value={sticker.tests_needed || ''}
-                            onChange={(value) => handleStickerCellChange(index, 'tests_needed', value)}
-                            type="text"
-                            className="text-sm w-full font-mono"
-                            placeholder="V H A S"
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          
-          {stickerPreview && stickerPreview.length === 0 && (
-            <div className="text-center py-8 text-gray-600">
-              No stickers match the selected filters.
-            </div>
-          )}
-        </div>
-      )}
-      
-      {/* Reporting Tab */}
-      {activeTab === 'reporting' && (
-        <div className="space-y-6">
-          {/* Filters */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  School
-                </label>
-                <select
-                  value={reportSchool}
-                  onChange={(e) => setReportSchool(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                >
-                  <option value="all">All Schools</option>
-                  {schools.map((school) => (
-                    <option key={school.id} value={school.name}>
-                      {school.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Start Date (Optional)
-                </label>
-                <input
-                  type="date"
-                  value={startDate}
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  End Date (Optional)
-                </label>
-                <input
-                  type="date"
-                  value={endDate}
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                />
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <button
-                onClick={handleGenerateReport}
-                disabled={loadingReporting}
-                className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-              >
-                {loadingReporting ? 'Generating...' : 'Generate Report'}
-              </button>
-            </div>
-            
-            {/* Notes Section */}
-            <div className="mt-6 border border-gray-300 rounded-lg">
-              <button
-                onClick={() => setIsNotesExpanded(!isNotesExpanded)}
-                className="w-full px-4 py-3 bg-gray-50 hover:bg-gray-100 flex justify-between items-center rounded-t-lg"
-              >
-                <span className="font-medium text-gray-700">Notes</span>
-                <span className="text-gray-500">{isNotesExpanded ? '▼' : '▶'}</span>
-              </button>
-              {isNotesExpanded && (
-                <div className="p-4">
-                  <textarea
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Enter notes here..."
-                    className="w-full h-48 px-3 py-2 border border-gray-300 rounded-md text-sm resize-y"
-                  />
+              {/* Preview */}
+              {filteredStudents.length > 0 && (
+                <div className="mt-6">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Preview (first 4 cards)</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {filteredStudents.slice(0, 4).map((student, idx) => {
+                      const tests = getTestsNeeded(student);
+                      return (
+                        <div key={idx} className="border-2 border-gray-300 rounded-lg p-3 bg-white">
+                          <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-2">
+                            <span className="font-mono font-bold text-sm">{student.unique_id || 'N/A'}</span>
+                            <span className="text-xs text-gray-500">{student.grade}</span>
+                          </div>
+                          <p className="font-semibold">{student.last_name}, {student.first_name}</p>
+                          <p className="text-xs text-gray-500 mb-2">Teacher: {student.teacher || '—'}</p>
+                          <div className="flex gap-2">
+                            {tests.split(' ').filter(Boolean).map(t => (
+                              <div key={t} className="w-8 h-8 border-2 border-gray-400 rounded flex items-center justify-center text-xs font-bold">
+                                {t}
+                              </div>
+                            ))}
+                            {!tests && <span className="text-xs text-gray-400 italic">No tests required</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
           </div>
-          
-          {/* Reporting Table */}
-          {reportData && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">Reporting Statistics</h2>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleExportReportingPDF}
-                    disabled={isExportingPDF}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-                  >
-                    {isExportingPDF ? 'Exporting PDF...' : 'Download PDF'}
-                  </button>
-                  {!isEditingReport ? (
-                    <button
-                      onClick={handleEditReport}
-                      className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600"
-                    >
-                      Edit
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        onClick={handleCancelEdit}
-                        className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveReporting}
-                        disabled={updateReportingMutation.isLoading}
-                        className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
-                      >
-                        {updateReportingMutation.isLoading ? 'Saving...' : 'Save Changes'}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-              
-              <div className="overflow-x-auto border border-gray-300 rounded-lg">
-                <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Grade</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Total Students</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Vision</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Hearing</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Acanthosis</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Scoliosis</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Glasses/Contacts</th>
-                    </tr>
-                    <tr>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700"></th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700"></th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 text-xs">Screened / Failed</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 text-xs">Screened / Failed</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 text-xs">Screened / Failed</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700 text-xs">Screened / Failed</th>
-                      <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Summary Row */}
-                    <tr className="bg-blue-50 font-semibold">
-                      <td className="border border-gray-300 px-3 py-2">TOTAL</td>
-                      <td className="border border-gray-300 px-3 py-2">
-                        {isEditingReport ? (
-                          <EditableCell
-                            value={reportData.summary.totalStudents || 0}
-                            onChange={(value) => handleReportCellChange(-1, 'totalStudents', null, value)}
-                            type="number"
-                            className="text-sm w-full font-semibold"
-                          />
-                        ) : (
-                          <span className="text-sm font-semibold">{reportData.summary.totalStudents || 0}</span>
-                        )}
-                      </td>
-                      <td className="border border-gray-300 px-3 py-2">
-                        <div className="flex gap-1">
-                          {isEditingReport ? (
-                            <EditableCell
-                              value={reportData.summary.totalVision || 0}
-                              onChange={(value) => handleReportCellChange(-1, 'totalVision', null, value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
-                          ) : (
-                            <span className="text-sm">{reportData.summary.totalVision || 0}</span>
-                          )}
-                          <span>/</span>
-                          <span className="text-gray-500">-</span>
-                        </div>
-                      </td>
-                      <td className="border border-gray-300 px-3 py-2">
-                        <div className="flex gap-1">
-                          {isEditingReport ? (
-                            <EditableCell
-                              value={reportData.summary.totalHearing || 0}
-                              onChange={(value) => handleReportCellChange(-1, 'totalHearing', null, value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
-                          ) : (
-                            <span className="text-sm">{reportData.summary.totalHearing || 0}</span>
-                          )}
-                          <span>/</span>
-                          <span className="text-gray-500">-</span>
-                        </div>
-                      </td>
-                      <td className="border border-gray-300 px-3 py-2">
-                        <div className="flex gap-1">
-                          {isEditingReport ? (
-                            <EditableCell
-                              value={reportData.summary.totalAcanthosis || 0}
-                              onChange={(value) => handleReportCellChange(-1, 'totalAcanthosis', null, value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
-                          ) : (
-                            <span className="text-sm">{reportData.summary.totalAcanthosis || 0}</span>
-                          )}
-                          <span>/</span>
-                          <span className="text-gray-500">-</span>
-                        </div>
-                      </td>
-                      <td className="border border-gray-300 px-3 py-2">
-                        <div className="flex gap-1">
-                          {isEditingReport ? (
-                            <EditableCell
-                              value={reportData.summary.totalScoliosis || 0}
-                              onChange={(value) => handleReportCellChange(-1, 'totalScoliosis', null, value)}
-                              type="number"
-                              className="text-sm w-16"
-                            />
-                          ) : (
-                            <span className="text-sm">{reportData.summary.totalScoliosis || 0}</span>
-                          )}
-                          <span>/</span>
-                          <span className="text-gray-500">-</span>
-                        </div>
-                      </td>
-                      <td className="border border-gray-300 px-3 py-2">
-                        <span className="text-gray-500">-</span>
-                      </td>
-                    </tr>
-                    
-                    {/* Grade Rows */}
-                    {reportData.byGrade.map((gradeData, index) => (
-                      <tr key={gradeData.grade}>
-                        <td className="border border-gray-300 px-3 py-2 font-medium">{gradeData.grade}</td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          {isEditingReport ? (
-                            <EditableCell
-                              value={gradeData.totalStudents || 0}
-                              onChange={(value) => handleReportCellChange(index, 'totalStudents', null, value)}
-                              type="number"
-                              className="text-sm w-full"
-                            />
-                          ) : (
-                            <span className="text-sm">{gradeData.totalStudents || 0}</span>
-                          )}
-                        </td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          <div className="flex gap-1 items-center">
-                            {isEditingReport ? (
-                              <EditableCell
-                                value={gradeData.vision.screened || 0}
-                                onChange={(value) => handleReportCellChange(index, 'vision', 'screened', value)}
-                                type="number"
-                                className="text-sm w-16"
-                              />
-                            ) : (
-                              <span className="text-sm">{gradeData.vision.screened || 0}</span>
-                            )}
-                            <span>/</span>
-                            {isEditingReport ? (
-                              <EditableCell
-                                value={gradeData.vision.failed || 0}
-                                onChange={(value) => handleReportCellChange(index, 'vision', 'failed', value)}
-                                type="number"
-                                className="text-sm w-16"
-                              />
-                            ) : (
-                              <span className="text-sm">{gradeData.vision.failed || 0}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          <div className="flex gap-1 items-center">
-                            {isEditingReport ? (
-                              <EditableCell
-                                value={gradeData.hearing.screened || 0}
-                                onChange={(value) => handleReportCellChange(index, 'hearing', 'screened', value)}
-                                type="number"
-                                className="text-sm w-16"
-                              />
-                            ) : (
-                              <span className="text-sm">{gradeData.hearing.screened || 0}</span>
-                            )}
-                            <span>/</span>
-                            {isEditingReport ? (
-                              <EditableCell
-                                value={gradeData.hearing.failed || 0}
-                                onChange={(value) => handleReportCellChange(index, 'hearing', 'failed', value)}
-                                type="number"
-                                className="text-sm w-16"
-                              />
-                            ) : (
-                              <span className="text-sm">{gradeData.hearing.failed || 0}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          <div className="flex gap-1 items-center">
-                            {isEditingReport ? (
-                              <EditableCell
-                                value={gradeData.acanthosis.screened || 0}
-                                onChange={(value) => handleReportCellChange(index, 'acanthosis', 'screened', value)}
-                                type="number"
-                                className="text-sm w-16"
-                              />
-                            ) : (
-                              <span className="text-sm">{gradeData.acanthosis.screened || 0}</span>
-                            )}
-                            <span>/</span>
-                            {isEditingReport ? (
-                              <EditableCell
-                                value={gradeData.acanthosis.failed || 0}
-                                onChange={(value) => handleReportCellChange(index, 'acanthosis', 'failed', value)}
-                                type="number"
-                                className="text-sm w-16"
-                              />
-                            ) : (
-                              <span className="text-sm">{gradeData.acanthosis.failed || 0}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          <div className="flex gap-1 items-center">
-                            {isEditingReport ? (
-                              <EditableCell
-                                value={gradeData.scoliosis.screened || 0}
-                                onChange={(value) => handleReportCellChange(index, 'scoliosis', 'screened', value)}
-                                type="number"
-                                className="text-sm w-16"
-                              />
-                            ) : (
-                              <span className="text-sm">{gradeData.scoliosis.screened || 0}</span>
-                            )}
-                            <span>/</span>
-                            {isEditingReport ? (
-                              <EditableCell
-                                value={gradeData.scoliosis.failed || 0}
-                                onChange={(value) => handleReportCellChange(index, 'scoliosis', 'failed', value)}
-                                type="number"
-                                className="text-sm w-16"
-                              />
-                            ) : (
-                              <span className="text-sm">{gradeData.scoliosis.failed || 0}</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="border border-gray-300 px-3 py-2">
-                          {isEditingReport ? (
-                            <EditableCell
-                              value={gradeData.glassesContacts || 0}
-                              onChange={(value) => handleReportCellChange(index, 'glassesContacts', null, value)}
-                              type="number"
-                              className="text-sm w-full"
-                            />
-                          ) : (
-                            <span className="text-sm">{gradeData.glassesContacts || 0}</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-          
-          {!reportData && shouldFetch && !loadingReporting && (
-            <div className="text-center py-8 text-gray-600">
-              No data available
-            </div>
-          )}
-          
-          {loadingReporting && (
-            <div className="text-center py-8 text-gray-600">
-              Generating report...
-            </div>
-          )}
-        </div>
-      )}
-      
-      {/* Students Export Tab */}
-      {activeTab === 'students' && (
-        <div className="space-y-6">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-sm text-blue-800 font-medium mb-2">
-              Export Students - Comprehensive Data Export
-            </p>
-            <p className="text-sm text-blue-800">
-              Search for students using filters below, then export all matching student data as CSV with complete screening information.
-            </p>
-          </div>
-          
-          {/* Filters */}
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  School
-                </label>
-                <select
-                  value={studentExportSchool}
-                  onChange={(e) => {
-                    setStudentExportSchool(e.target.value);
-                    setStudentExportResults(null);
-                    setShouldSearchStudents(false);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                >
-                  <option value="all">All Schools</option>
-                  {schools.map((school) => (
-                    <option key={school.id} value={school.name}>
-                      {school.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Grade (Optional)
-                </label>
-                <select
-                  value={studentExportGrade}
-                  onChange={(e) => {
-                    setStudentExportGrade(e.target.value);
-                    setStudentExportResults(null);
-                    setShouldSearchStudents(false);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                >
-                  <option value="">All Grades</option>
-                  <option value="Pre-K (3)">Pre-K (3)</option>
-                  <option value="Pre-K (4)">Pre-K (4)</option>
-                  <option value="Kindergarten">Kindergarten</option>
-                  <option value="1st">1st</option>
-                  <option value="2nd">2nd</option>
-                  <option value="3rd">3rd</option>
-                  <option value="4th">4th</option>
-                  <option value="5th">5th</option>
-                  <option value="6th">6th</option>
-                  <option value="7th">7th</option>
-                  <option value="8th">8th</option>
-                  <option value="9th">9th</option>
-                  <option value="10th">10th</option>
-                  <option value="11th">11th</option>
-                  <option value="12th">12th</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <select
-                  value={studentExportStatus}
-                  onChange={(e) => {
-                    setStudentExportStatus(e.target.value);
-                    setStudentExportResults(null);
-                    setShouldSearchStudents(false);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="New">New</option>
-                  <option value="Returning">Returning</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Search (Name or ID)
-                </label>
-                <input
-                  type="text"
-                  value={studentExportSearch}
-                  onChange={(e) => {
-                    setStudentExportSearch(e.target.value);
-                    setStudentExportResults(null);
-                    setShouldSearchStudents(false);
-                  }}
-                  placeholder="Search by name or student ID"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Start Date (Optional)
-                </label>
-                <input
-                  type="date"
-                  value={studentExportStartDate}
-                  onChange={(e) => {
-                    setStudentExportStartDate(e.target.value);
-                    setStudentExportResults(null);
-                    setShouldSearchStudents(false);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                />
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  End Date (Optional)
-                </label>
-                <input
-                  type="date"
-                  value={studentExportEndDate}
-                  onChange={(e) => {
-                    setStudentExportEndDate(e.target.value);
-                    setStudentExportResults(null);
-                    setShouldSearchStudents(false);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
-                />
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <button
-                onClick={handleSearchStudents}
-                disabled={loadingStudentExport}
-                className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 disabled:opacity-50"
-              >
-                {loadingStudentExport ? 'Searching...' : 'Search Students'}
-              </button>
-            </div>
-          </div>
-          
-          {/* Results */}
-          {studentExportResults && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-900">
-                  Search Results ({studentExportResults.count} student{studentExportResults.count !== 1 ? 's' : ''})
-                </h2>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleExportStudentsCSV}
-                    disabled={isExportingStudents || studentExportResults.count === 0}
-                    className="px-6 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isExportingStudents ? 'Exporting...' : 'Export CSV'}
-                  </button>
-                </div>
-              </div>
-              
-              {studentExportResults.count > 0 ? (
-                <div className="bg-white border border-gray-300 rounded-lg p-4">
-                  <p className="text-sm text-gray-700 mb-4">
-                    Found <strong>{studentExportResults.count}</strong> student{studentExportResults.count !== 1 ? 's' : ''} matching your search criteria.
-                    {studentExportResults.count > 0 && (
-                      <span className="block mt-2 text-blue-600 font-medium">
-                        Would you like to export?
-                      </span>
-                    )}
+        )}
+        
+        {/* School Report Tab */}
+        {activeTab === 'report' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">School Screening Report</h2>
+                  <p className="text-sm text-gray-600">
+                    Summary statistics by grade showing screened counts and failures
                   </p>
-                  
-                  {/* Preview Table - Show first 10 rows */}
-                  <div className="overflow-x-auto border border-gray-300 rounded-lg">
-                    <table className="w-full text-sm" style={{ borderCollapse: 'collapse' }}>
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Student ID</th>
-                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Name</th>
-                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Grade</th>
-                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">School</th>
-                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Status</th>
-                          <th className="border border-gray-300 px-3 py-2 text-left font-semibold text-gray-700">Screening Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {studentExportResults.students.slice(0, 10).map((student, index) => (
-                          <tr key={index}>
-                            <td className="border border-gray-300 px-3 py-2">{student.unique_id || ''}</td>
-                            <td className="border border-gray-300 px-3 py-2">{student.full_name || `${student.first_name} ${student.last_name}`.trim()}</td>
-                            <td className="border border-gray-300 px-3 py-2">{student.grade || ''}</td>
-                            <td className="border border-gray-300 px-3 py-2">{student.school || ''}</td>
-                            <td className="border border-gray-300 px-3 py-2">{student.status || ''}</td>
-                            <td className="border border-gray-300 px-3 py-2">{student.initial_screening_date || 'Not screened'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  
-                  {studentExportResults.count > 10 && (
-                    <p className="mt-2 text-sm text-gray-600 text-center">
-                      Showing first 10 of {studentExportResults.count} students. Export CSV to see all data.
-                    </p>
-                  )}
+                </div>
+                <button
+                  onClick={generateReportPDF}
+                  disabled={reportStats.total === 0 || isLoading}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Print Report
+                </button>
+              </div>
+              
+              {reportStats.total === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <div className="text-4xl mb-2">📊</div>
+                  <p>No data available. Select a school and year above.</p>
                 </div>
               ) : (
-                <div className="text-center py-8 text-gray-600">
-                  No students found matching your search criteria.
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-800 text-white">
+                        <th className="px-3 py-2 text-left">Grade</th>
+                        <th className="px-3 py-2 text-center">Total</th>
+                        <th className="px-3 py-2 text-center" colSpan={2}>Vision</th>
+                        <th className="px-3 py-2 text-center">👓</th>
+                        <th className="px-3 py-2 text-center" colSpan={2}>Hearing</th>
+                        <th className="px-3 py-2 text-center" colSpan={2}>AN</th>
+                        <th className="px-3 py-2 text-center" colSpan={2}>Scoliosis</th>
+                      </tr>
+                      <tr className="bg-gray-100 text-xs text-gray-600">
+                        <th></th>
+                        <th></th>
+                        <th className="px-2 py-1">Done</th>
+                        <th className="px-2 py-1">Fail</th>
+                        <th></th>
+                        <th className="px-2 py-1">Done</th>
+                        <th className="px-2 py-1">Fail</th>
+                        <th className="px-2 py-1">Done</th>
+                        <th className="px-2 py-1">Fail</th>
+                        <th className="px-2 py-1">Done</th>
+                        <th className="px-2 py-1">Fail</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportStats.byGrade.map((g, idx) => (
+                        <tr key={g.grade} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                          <td className="px-3 py-2 font-medium">{g.grade}</td>
+                          <td className="px-3 py-2 text-center">{g.total}</td>
+                          <td className="px-3 py-2 text-center">{g.vision.screened}</td>
+                          <td className={`px-3 py-2 text-center ${g.vision.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.vision.failed}</td>
+                          <td className="px-3 py-2 text-center">{g.glasses}</td>
+                          <td className="px-3 py-2 text-center">{g.hearing.screened}</td>
+                          <td className={`px-3 py-2 text-center ${g.hearing.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.hearing.failed}</td>
+                          <td className="px-3 py-2 text-center">{g.acanthosis.screened}</td>
+                          <td className={`px-3 py-2 text-center ${g.acanthosis.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.acanthosis.failed}</td>
+                          <td className="px-3 py-2 text-center">{g.scoliosis.screened}</td>
+                          <td className={`px-3 py-2 text-center ${g.scoliosis.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.scoliosis.failed}</td>
+                        </tr>
+                      ))}
+                      <tr className="bg-blue-50 font-bold border-t-2 border-blue-200">
+                        <td className="px-3 py-2">TOTAL</td>
+                        <td className="px-3 py-2 text-center">{reportStats.total}</td>
+                        <td className="px-3 py-2 text-center">{reportStats.byGrade.reduce((s, g) => s + g.vision.screened, 0)}</td>
+                        <td className="px-3 py-2 text-center text-red-600">{reportStats.byGrade.reduce((s, g) => s + g.vision.failed, 0)}</td>
+                        <td className="px-3 py-2 text-center">{reportStats.byGrade.reduce((s, g) => s + g.glasses, 0)}</td>
+                        <td className="px-3 py-2 text-center">{reportStats.byGrade.reduce((s, g) => s + g.hearing.screened, 0)}</td>
+                        <td className="px-3 py-2 text-center text-red-600">{reportStats.byGrade.reduce((s, g) => s + g.hearing.failed, 0)}</td>
+                        <td className="px-3 py-2 text-center">{reportStats.byGrade.reduce((s, g) => s + g.acanthosis.screened, 0)}</td>
+                        <td className="px-3 py-2 text-center text-red-600">{reportStats.byGrade.reduce((s, g) => s + g.acanthosis.failed, 0)}</td>
+                        <td className="px-3 py-2 text-center">{reportStats.byGrade.reduce((s, g) => s + g.scoliosis.screened, 0)}</td>
+                        <td className="px-3 py-2 text-center text-red-600">{reportStats.byGrade.reduce((s, g) => s + g.scoliosis.failed, 0)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
-          )}
-          
-          {!studentExportResults && shouldSearchStudents && !loadingStudentExport && (
-            <div className="text-center py-8 text-gray-600">
-              No data available
+          </div>
+        )}
+        
+        {/* Student Data Tab */}
+        {activeTab === 'students' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Export Student Data</h2>
+                  <p className="text-sm text-gray-600">
+                    Download complete screening data as a CSV file
+                  </p>
+                </div>
+                <button
+                  onClick={exportStudentsCSV}
+                  disabled={allStudents.length === 0 || isLoading}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                  Export CSV
+                </button>
+              </div>
+              
+              {allStudents.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <div className="text-4xl mb-2">📋</div>
+                  <p>No students found. Select a school and year above.</p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600 mb-4">
+                    <span className="font-semibold text-gray-900">{allStudents.length}</span> students will be exported with the following information:
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                    {['Student ID', 'Name', 'Grade', 'Gender', 'DOB', 'School', 'Teacher', 'Screening Date', 'Vision Results', 'Hearing Results', 'Acanthosis', 'Scoliosis', 'Notes'].map(field => (
+                      <div key={field} className="flex items-center gap-2 text-gray-600">
+                        <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        {field}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {/* Preview */}
+                  <div className="mt-6">
+                    <h3 className="text-sm font-medium text-gray-700 mb-3">Preview (first 5 students)</h3>
+                    <div className="overflow-x-auto border border-gray-200 rounded-lg">
+                      <table className="w-full text-xs">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-2 py-1.5 text-left">ID</th>
+                            <th className="px-2 py-1.5 text-left">Name</th>
+                            <th className="px-2 py-1.5 text-left">Grade</th>
+                            <th className="px-2 py-1.5 text-left">School</th>
+                            <th className="px-2 py-1.5 text-left">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allStudents.slice(0, 5).map((s, idx) => (
+                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                              <td className="px-2 py-1.5 font-mono">{s.unique_id}</td>
+                              <td className="px-2 py-1.5">{s.last_name}, {s.first_name}</td>
+                              <td className="px-2 py-1.5">{s.grade}</td>
+                              <td className="px-2 py-1.5">{s.school}</td>
+                              <td className="px-2 py-1.5 capitalize">{getRowStatus(s).replace('_', ' ')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {allStudents.length > 5 && (
+                      <p className="text-xs text-gray-500 mt-2 text-center">
+                        ...and {allStudents.length - 5} more students
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
-          )}
-          
-          {loadingStudentExport && (
-            <div className="text-center py-8 text-gray-600">
-              Searching students...
-            </div>
-          )}
-        </div>
-      )}
-      
-      {/* Save Confirmation Dialog */}
-      <ConfirmDialog
-        isOpen={showSaveConfirm}
-        title="Confirm Save"
-        message="Are you sure you want to save these changes?"
-        onConfirm={handleConfirmSave}
-        onCancel={() => setShowSaveConfirm(false)}
-        confirmText={updateReportingMutation.isLoading ? 'Saving...' : 'Save Changes'}
-        confirmButtonClass="bg-green-500 hover:bg-green-600"
-        isLoading={updateReportingMutation.isLoading}
-      />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

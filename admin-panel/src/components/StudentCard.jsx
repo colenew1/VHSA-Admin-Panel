@@ -35,34 +35,62 @@ function StatusBadge({ status, hasFailed, hasRescreen }) {
 }
 
 /**
- * Test result display with fail highlighting
+ * Display value helper - shows a dash if empty
  */
-function TestResult({ label, value, isFail }) {
-  if (!value) return null;
-  
-  return (
-    <div className={`flex items-center justify-between px-2 py-1 rounded ${isFail ? 'bg-red-50' : 'bg-gray-50'}`}>
-      <span className="text-xs text-gray-500">{label}</span>
-      <span className={`text-sm font-medium ${isFail ? 'text-red-700' : 'text-gray-900'}`}>
-        {formatTestResult(value)}
-      </span>
-    </div>
-  );
+function displayValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  return value;
 }
 
 /**
- * Editable field component
+ * Editable field component with proper value display
  */
-function EditField({ label, value, onChange, type = 'text', options = [], disabled = false }) {
+function EditField({ label, value, onChange, type = 'text', options = [], disabled = false, isFailed = false }) {
+  const failedStyles = isFailed ? 'bg-red-50 border-red-300 ring-2 ring-red-200' : '';
+  const failedTextStyles = isFailed ? 'text-red-700 font-semibold' : '';
+  
+  // For disabled view, show value nicely
+  if (disabled) {
+    if (type === 'checkbox') {
+      return (
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={!!value}
+            disabled
+            className="w-4 h-4 text-blue-600 border-gray-300 rounded"
+          />
+          <span className="text-sm text-gray-700">{label}</span>
+        </div>
+      );
+    }
+    
+    // Format display value for selects
+    let displayVal = displayValue(value);
+    if (type === 'select' && options.length > 0 && value) {
+      const option = options.find(o => o.value === value);
+      if (option) displayVal = option.label;
+    }
+    
+    return (
+      <div className={`flex flex-col gap-1 ${isFailed ? 'p-2 rounded-lg ' + failedStyles : ''}`}>
+        {label && <label className="text-xs font-medium text-gray-500">{label}</label>}
+        <span className={`text-sm ${value ? (isFailed ? failedTextStyles : 'text-gray-900') : 'text-gray-400'}`}>
+          {displayVal}
+        </span>
+      </div>
+    );
+  }
+  
+  // Editing mode
   if (type === 'select') {
     return (
-      <div className="flex flex-col gap-1">
-        <label className="text-xs font-medium text-gray-500">{label}</label>
+      <div className={`flex flex-col gap-1 ${isFailed ? 'p-2 rounded-lg ' + failedStyles : ''}`}>
+        {label && <label className="text-xs font-medium text-gray-500">{label}</label>}
         <select
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
-          disabled={disabled}
-          className="px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+          className={`px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isFailed ? failedTextStyles : ''}`}
         >
           {options.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -79,7 +107,6 @@ function EditField({ label, value, onChange, type = 'text', options = [], disabl
           type="checkbox"
           checked={!!value}
           onChange={(e) => onChange(e.target.checked)}
-          disabled={disabled}
           className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
         />
         <span className="text-sm text-gray-700">{label}</span>
@@ -88,33 +115,37 @@ function EditField({ label, value, onChange, type = 'text', options = [], disabl
   }
   
   return (
-    <div className="flex flex-col gap-1">
-      <label className="text-xs font-medium text-gray-500">{label}</label>
+    <div className={`flex flex-col gap-1 ${isFailed ? 'p-2 rounded-lg ' + failedStyles : ''}`}>
+      {label && <label className="text-xs font-medium text-gray-500">{label}</label>}
       <input
         type={type}
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        className="px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+        className={`px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isFailed ? failedTextStyles : ''}`}
       />
     </div>
   );
 }
 
 /**
- * Test section with editable fields
+ * Test section with visual indicator for failures
  */
-function TestSection({ title, children, accentColor = 'blue' }) {
+function TestSection({ title, children, accentColor = 'blue', hasFailed = false }) {
   const colors = {
-    blue: 'border-blue-200 bg-blue-50/30',
-    green: 'border-green-200 bg-green-50/30',
-    purple: 'border-purple-200 bg-purple-50/30',
-    orange: 'border-orange-200 bg-orange-50/30',
+    blue: hasFailed ? 'border-red-300 bg-red-50/50' : 'border-blue-200 bg-blue-50/30',
+    green: hasFailed ? 'border-red-300 bg-red-50/50' : 'border-green-200 bg-green-50/30',
+    purple: hasFailed ? 'border-red-300 bg-red-50/50' : 'border-purple-200 bg-purple-50/30',
+    orange: hasFailed ? 'border-red-300 bg-red-50/50' : 'border-orange-200 bg-orange-50/30',
   };
   
   return (
-    <div className={`rounded-lg border ${colors[accentColor]} p-3`}>
-      <h4 className="text-sm font-semibold text-gray-700 mb-2">{title}</h4>
+    <div className={`rounded-lg border-2 ${colors[accentColor]} p-3 ${hasFailed ? 'ring-2 ring-red-300' : ''}`}>
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-sm font-semibold text-gray-700">{title}</h4>
+        {hasFailed && (
+          <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded">FAILED</span>
+        )}
+      </div>
       <div className="space-y-2">
         {children}
       </div>
@@ -170,7 +201,7 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
       
       {/* Quick Info */}
       <div className="flex items-center gap-3 text-xs text-gray-500">
-        <span>ID: {student.unique_id || student.student_id}</span>
+        <span>ID: {student.unique_id || student.student_id || '—'}</span>
         {student.glasses_or_contacts === 'Yes' && (
           <span className="px-1.5 py-0.5 bg-gray-100 rounded">👓 Glasses</span>
         )}
@@ -207,6 +238,14 @@ export function StudentCardExpanded({
   const status = getRowStatus(student);
   const hasFailed = hasFailedTest(student);
   
+  // Check which test categories failed
+  const visionFailed = isTestFail(student.vision_overall) || isTestFail(student.vision_initial_right) || isTestFail(student.vision_initial_left);
+  const hearingFailed = isTestFail(student.hearing_overall) || 
+    isTestFail(student.hearing_initial_right_1000) || isTestFail(student.hearing_initial_right_2000) || isTestFail(student.hearing_initial_right_4000) ||
+    isTestFail(student.hearing_initial_left_1000) || isTestFail(student.hearing_initial_left_2000) || isTestFail(student.hearing_initial_left_4000);
+  const anFailed = isTestFail(student.acanthosis_initial) || isTestFail(student.acanthosis_rescreen);
+  const scoliosisFailed = isTestFail(student.scoliosis_initial) || isTestFail(student.scoliosis_rescreen);
+  
   return (
     <div className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden max-w-4xl w-full max-h-[90vh] overflow-y-auto">
       {/* Header */}
@@ -214,10 +253,10 @@ export function StudentCardExpanded({
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-xl font-bold text-gray-900">
-              {student.last_name}, {student.first_name}
+              {student.last_name || '—'}, {student.first_name || '—'}
             </h2>
             <p className="text-sm text-gray-500">
-              {student.grade} • {student.school} • {student.teacher || 'No Teacher'}
+              {student.grade || 'No Grade'} • {student.school || 'No School'} • {student.teacher || 'No Teacher'}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -263,7 +302,7 @@ export function StudentCardExpanded({
             value={student.gender}
             onChange={(v) => onChange('gender', v)}
             type="select"
-            options={[{ value: '', label: '' }, { value: 'M', label: 'Male' }, { value: 'F', label: 'Female' }]}
+            options={[{ value: '', label: '—' }, { value: 'Male', label: 'Male' }, { value: 'Female', label: 'Female' }, { value: 'Other', label: 'Other' }]}
             disabled={!isEditing}
           />
           <EditField
@@ -288,7 +327,7 @@ export function StudentCardExpanded({
           <div className="flex items-end">
             <EditField
               label="Glasses/Contacts"
-              value={student.glasses_or_contacts === 'Yes'}
+              value={student.glasses_or_contacts === 'Yes' || student.glasses_or_contacts === true}
               onChange={(v) => onChange('glasses_or_contacts', v ? 'Yes' : 'No')}
               type="checkbox"
               disabled={!isEditing}
@@ -299,7 +338,7 @@ export function StudentCardExpanded({
         {/* Test Results Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           {/* Vision */}
-          <TestSection title="👁️ Vision" accentColor="blue">
+          <TestSection title="👁️ Vision" accentColor="blue" hasFailed={visionFailed}>
             <div className="grid grid-cols-2 gap-2">
               <EditField
                 label="Overall"
@@ -308,6 +347,7 @@ export function StudentCardExpanded({
                 type="select"
                 options={TEST_RESULT_OPTIONS}
                 disabled={!isEditing}
+                isFailed={isTestFail(student.vision_overall)}
               />
               <div></div>
               <EditField
@@ -317,6 +357,7 @@ export function StudentCardExpanded({
                 type="select"
                 options={VISION_ACUITY_OPTIONS}
                 disabled={!isEditing}
+                isFailed={isTestFail(student.vision_initial_right)}
               />
               <EditField
                 label="Initial Left"
@@ -325,6 +366,7 @@ export function StudentCardExpanded({
                 type="select"
                 options={VISION_ACUITY_OPTIONS}
                 disabled={!isEditing}
+                isFailed={isTestFail(student.vision_initial_left)}
               />
               <EditField
                 label="Rescreen Right"
@@ -346,7 +388,7 @@ export function StudentCardExpanded({
           </TestSection>
           
           {/* Hearing */}
-          <TestSection title="👂 Hearing" accentColor="green">
+          <TestSection title="👂 Hearing" accentColor="green" hasFailed={hearingFailed}>
             <EditField
               label="Overall"
               value={student.hearing_overall}
@@ -354,6 +396,7 @@ export function StudentCardExpanded({
               type="select"
               options={TEST_RESULT_OPTIONS}
               disabled={!isEditing}
+              isFailed={isTestFail(student.hearing_overall)}
             />
             <div className="grid grid-cols-3 gap-2 mt-2">
               <span className="text-xs text-gray-400 text-center">1000Hz</span>
@@ -363,21 +406,33 @@ export function StudentCardExpanded({
             <div className="space-y-1">
               <p className="text-xs font-medium text-gray-500">Initial Right</p>
               <div className="grid grid-cols-3 gap-2">
-                <EditField label="" value={student.hearing_initial_right_1000} onChange={(v) => onChange('hearing_initial_right_1000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
-                <EditField label="" value={student.hearing_initial_right_2000} onChange={(v) => onChange('hearing_initial_right_2000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
-                <EditField label="" value={student.hearing_initial_right_4000} onChange={(v) => onChange('hearing_initial_right_4000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
+                <EditField label="" value={student.hearing_initial_right_1000} onChange={(v) => onChange('hearing_initial_right_1000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.hearing_initial_right_1000)} />
+                <EditField label="" value={student.hearing_initial_right_2000} onChange={(v) => onChange('hearing_initial_right_2000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.hearing_initial_right_2000)} />
+                <EditField label="" value={student.hearing_initial_right_4000} onChange={(v) => onChange('hearing_initial_right_4000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.hearing_initial_right_4000)} />
               </div>
               <p className="text-xs font-medium text-gray-500 mt-2">Initial Left</p>
               <div className="grid grid-cols-3 gap-2">
-                <EditField label="" value={student.hearing_initial_left_1000} onChange={(v) => onChange('hearing_initial_left_1000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
-                <EditField label="" value={student.hearing_initial_left_2000} onChange={(v) => onChange('hearing_initial_left_2000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
-                <EditField label="" value={student.hearing_initial_left_4000} onChange={(v) => onChange('hearing_initial_left_4000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
+                <EditField label="" value={student.hearing_initial_left_1000} onChange={(v) => onChange('hearing_initial_left_1000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.hearing_initial_left_1000)} />
+                <EditField label="" value={student.hearing_initial_left_2000} onChange={(v) => onChange('hearing_initial_left_2000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.hearing_initial_left_2000)} />
+                <EditField label="" value={student.hearing_initial_left_4000} onChange={(v) => onChange('hearing_initial_left_4000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.hearing_initial_left_4000)} />
+              </div>
+              <p className="text-xs font-medium text-gray-500 mt-2">Rescreen Right</p>
+              <div className="grid grid-cols-3 gap-2">
+                <EditField label="" value={student.hearing_rescreen_right_1000} onChange={(v) => onChange('hearing_rescreen_right_1000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
+                <EditField label="" value={student.hearing_rescreen_right_2000} onChange={(v) => onChange('hearing_rescreen_right_2000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
+                <EditField label="" value={student.hearing_rescreen_right_4000} onChange={(v) => onChange('hearing_rescreen_right_4000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
+              </div>
+              <p className="text-xs font-medium text-gray-500 mt-2">Rescreen Left</p>
+              <div className="grid grid-cols-3 gap-2">
+                <EditField label="" value={student.hearing_rescreen_left_1000} onChange={(v) => onChange('hearing_rescreen_left_1000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
+                <EditField label="" value={student.hearing_rescreen_left_2000} onChange={(v) => onChange('hearing_rescreen_left_2000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
+                <EditField label="" value={student.hearing_rescreen_left_4000} onChange={(v) => onChange('hearing_rescreen_left_4000', v)} type="select" options={TEST_RESULT_OPTIONS} disabled={!isEditing} />
               </div>
             </div>
           </TestSection>
           
           {/* AN (Acanthosis) */}
-          <TestSection title="🩺 Acanthosis Nigricans" accentColor="purple">
+          <TestSection title="🩺 Acanthosis Nigricans" accentColor="purple" hasFailed={anFailed}>
             <div className="grid grid-cols-2 gap-2">
               <EditField
                 label="Initial"
@@ -386,6 +441,7 @@ export function StudentCardExpanded({
                 type="select"
                 options={TEST_RESULT_OPTIONS}
                 disabled={!isEditing}
+                isFailed={isTestFail(student.acanthosis_initial)}
               />
               <EditField
                 label="Rescreen"
@@ -394,12 +450,13 @@ export function StudentCardExpanded({
                 type="select"
                 options={TEST_RESULT_OPTIONS}
                 disabled={!isEditing}
+                isFailed={isTestFail(student.acanthosis_rescreen)}
               />
             </div>
           </TestSection>
           
           {/* Scoliosis */}
-          <TestSection title="🦴 Scoliosis" accentColor="orange">
+          <TestSection title="🦴 Scoliosis" accentColor="orange" hasFailed={scoliosisFailed}>
             <div className="grid grid-cols-2 gap-2">
               <EditField
                 label="Initial"
@@ -408,6 +465,7 @@ export function StudentCardExpanded({
                 type="select"
                 options={TEST_RESULT_OPTIONS}
                 disabled={!isEditing}
+                isFailed={isTestFail(student.scoliosis_initial)}
               />
               <EditField
                 label="Rescreen"
@@ -416,6 +474,7 @@ export function StudentCardExpanded({
                 type="select"
                 options={TEST_RESULT_OPTIONS}
                 disabled={!isEditing}
+                isFailed={isTestFail(student.scoliosis_rescreen)}
               />
             </div>
           </TestSection>
@@ -490,4 +549,3 @@ export function StudentCardExpanded({
 }
 
 export default StudentCardCompact;
-

@@ -3,9 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Navbar from './components/Navbar';
 import ErrorBoundary from './components/ErrorBoundary';
 import { ToastProvider } from './components/Toast';
-import DashboardNew from './pages/DashboardNew';
-import DashboardLegacy from './pages/Dashboard';
-import Search from './pages/Search';
+import Dashboard from './pages/Dashboard';
+import Students from './pages/Students';
 import Import from './pages/Import';
 import Export from './pages/Export';
 import Advanced from './pages/Advanced';
@@ -31,9 +30,8 @@ function App() {
               <main className="container mx-auto px-4 py-6">
                 <Routes>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                  <Route path="/dashboard" element={<DashboardNew />} />
-                  <Route path="/dashboard-legacy" element={<DashboardLegacy />} />
-                  <Route path="/students" element={<Search />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/students" element={<Students />} />
                   <Route path="/import" element={<Import />} />
                   <Route path="/export" element={<Export />} />
                   <Route path="/advanced" element={<Advanced />} />
