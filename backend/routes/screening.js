@@ -380,6 +380,7 @@ router.put('/:unique_id', async (req, res, next) => {
     console.log('Body keys:', Object.keys(req.body));
 
     // Separate student data from screening data (check before deleting)
+    // Note: 'notes' is stored in screening_results, not students table
     const studentDataFields = {};
     if (updateData.first_name !== undefined) studentDataFields.first_name = updateData.first_name;
     if (updateData.last_name !== undefined) studentDataFields.last_name = updateData.last_name;
@@ -390,9 +391,10 @@ router.put('/:unique_id', async (req, res, next) => {
     if (updateData.teacher !== undefined) studentDataFields.teacher = updateData.teacher;
     if (updateData.status !== undefined) studentDataFields.status = updateData.status;
     if (updateData.unique_id !== undefined) studentDataFields.unique_id = updateData.unique_id;
-    if (updateData.notes !== undefined) studentDataFields.notes = updateData.notes;
+    // Don't include notes - it's in screening_results table, not students
 
     // Remove student metadata fields from updateData for screening_results
+    // (notes stays - it goes to screening_results)
     delete updateData.student_id;
     delete updateData.unique_id;
     delete updateData.first_name;
@@ -403,7 +405,6 @@ router.put('/:unique_id', async (req, res, next) => {
     delete updateData.school;
     delete updateData.teacher;
     delete updateData.status;
-    delete updateData.notes;
 
     // Map frontend field names to database column names
     const fieldMapping = {
@@ -412,6 +413,7 @@ router.put('/:unique_id', async (req, res, next) => {
       'was_absent': 'was_absent',
       'glasses_or_contacts': null, // This is derived from vision_initial_glasses or vision_rescreen_glasses
       'status_override': 'status_override', // Manual status override
+      'notes': 'notes', // Screening notes
       // Vision
       'vision_required': 'vision_required',
       'vision_complete': 'vision_complete',
