@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { searchStudentsById, searchStudentsByName, createStudent, getSchools, updateScreening, getScreeningData } from '../api/client';
+import { searchStudentsById, searchStudentsByName, createStudent, getSchools, updateScreening, searchStudentsWithNotes } from '../api/client';
 import { getRowStatus, hasFailedTest, needsRescreen, formatDate } from '../utils/statusHelpers';
 import { GRADE_OPTIONS } from '../constants/screeningOptions';
 import { StudentCardExpanded } from '../components/StudentCard';
@@ -46,8 +46,8 @@ function NoteCard({ student, onClick }) {
         </div>
       </div>
       
-      {/* Notes Preview */}
-      {student.notes && (
+      {/* Notes Preview - show all_notes (combined) or individual notes */}
+      {(student.all_notes || student.notes || student.initial_notes || student.rescreen_notes) && (
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mt-2">
           <div className="flex items-center gap-2 text-yellow-800 mb-1">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -55,7 +55,9 @@ function NoteCard({ student, onClick }) {
             </svg>
             <span className="text-xs font-semibold">Notes</span>
           </div>
-          <p className="text-sm text-yellow-900 line-clamp-3">{student.notes}</p>
+          <p className="text-sm text-yellow-900 line-clamp-4 whitespace-pre-wrap">
+            {student.all_notes || student.notes || student.initial_notes || student.rescreen_notes}
+          </p>
         </div>
       )}
     </div>
@@ -107,27 +109,23 @@ export default function Students() {
   });
   const schools = schoolsData?.schools || [];
   
-  // Fetch all students with notes
+  // Fetch students with notes using the dedicated endpoint
   const { data: notesData, isLoading: loadingNotes, refetch: refetchNotes } = useQuery({
     queryKey: ['students-notes', notesSchool, notesYear],
-    queryFn: () => getScreeningData({
-      school: notesSchool,
+    queryFn: () => searchStudentsWithNotes({
+      school: notesSchool === 'all' ? undefined : notesSchool,
       year: notesYear,
-      startDate: `${notesYear}-01-01`,
-      endDate: `${notesYear}-12-31`,
-      limit: 2000,
-      offset: 0,
+      hasNotes: 'yes', // Only fetch students that have notes
     }),
     refetchOnWindowFocus: false,
   });
   
-  // Filter to only students with notes
+  // Students with notes come pre-filtered from the API
   const studentsWithNotes = useMemo(() => {
-    const allStudents = notesData?.data || [];
-    return allStudents.filter(s => s.notes && s.notes.trim() !== '');
+    return notesData?.students || [];
   }, [notesData]);
   
-  // Apply search term filter
+  // Apply search term filter - search in all_notes (combined notes field)
   const filteredNotesStudents = useMemo(() => {
     if (!notesSearchTerm) return studentsWithNotes;
     const term = notesSearchTerm.toLowerCase();
@@ -135,7 +133,10 @@ export default function Students() {
       s.first_name?.toLowerCase().includes(term) ||
       s.last_name?.toLowerCase().includes(term) ||
       s.unique_id?.toLowerCase().includes(term) ||
-      s.notes?.toLowerCase().includes(term)
+      s.all_notes?.toLowerCase().includes(term) ||
+      s.notes?.toLowerCase().includes(term) ||
+      s.initial_notes?.toLowerCase().includes(term) ||
+      s.rescreen_notes?.toLowerCase().includes(term)
     );
   }, [studentsWithNotes, notesSearchTerm]);
   
