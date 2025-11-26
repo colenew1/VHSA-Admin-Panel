@@ -86,7 +86,6 @@ export default function Export() {
   // Cards export state
   const [cardsGrades, setCardsGrades] = useState([...ALL_GRADES]);
   const [cardsGradePreset, setCardsGradePreset] = useState('all');
-  const [cardsTeacher, setCardsTeacher] = useState('all');
   
   // Fetch schools
   const { data: schoolsData } = useQuery({
@@ -112,16 +111,7 @@ export default function Export() {
   
   const allStudents = screeningData?.data || [];
   
-  // Get unique teachers from current data
-  const teachers = useMemo(() => {
-    const teacherSet = new Set();
-    allStudents.forEach(s => {
-      if (s.teacher) teacherSet.add(s.teacher);
-    });
-    return Array.from(teacherSet).sort();
-  }, [allStudents]);
-  
-  // Filter students for cards - by status, grade, and teacher
+  // Filter students for cards - by status and grade
   const filteredStudents = useMemo(() => {
     let filtered = allStudents;
     
@@ -133,13 +123,8 @@ export default function Export() {
     // Filter by grade
     filtered = filtered.filter(s => cardsGrades.includes(s.grade));
     
-    // Filter by teacher
-    if (cardsTeacher !== 'all') {
-      filtered = filtered.filter(s => s.teacher === cardsTeacher);
-    }
-    
     return filtered;
-  }, [allStudents, statusFilter, cardsGrades, cardsTeacher]);
+  }, [allStudents, statusFilter, cardsGrades]);
   
   // Calculate reporting statistics - includes ALL selected grades even if empty
   const reportStats = useMemo(() => {
@@ -696,30 +681,15 @@ export default function Export() {
                 </div>
               </div>
               
-              {/* Teacher Filter */}
-              <div className="mb-4">
-                <label className="text-sm font-medium text-gray-700 block mb-2">Filter by Teacher</label>
-                <select
-                  value={cardsTeacher}
-                  onChange={(e) => setCardsTeacher(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-w-[200px]"
-                >
-                  <option value="all">All Teachers ({teachers.length})</option>
-                  {teachers.map(t => (
-                    <option key={t} value={t}>{t}</option>
-                  ))}
-                </select>
-              </div>
-              
               {/* Status Filter */}
               <div className="mb-4">
                 <label className="text-sm font-medium text-gray-700 block mb-2">Filter by Status</label>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    { value: 'all', label: 'All', count: allStudents.filter(s => cardsGrades.includes(s.grade) && (cardsTeacher === 'all' || s.teacher === cardsTeacher)).length },
-                    { value: 'not_started', label: 'Not Started', count: allStudents.filter(s => cardsGrades.includes(s.grade) && (cardsTeacher === 'all' || s.teacher === cardsTeacher) && getRowStatus(s) === 'not_started').length },
-                    { value: 'incomplete', label: 'Incomplete', count: allStudents.filter(s => cardsGrades.includes(s.grade) && (cardsTeacher === 'all' || s.teacher === cardsTeacher) && getRowStatus(s) === 'incomplete').length },
-                    { value: 'completed', label: 'Completed', count: allStudents.filter(s => cardsGrades.includes(s.grade) && (cardsTeacher === 'all' || s.teacher === cardsTeacher) && getRowStatus(s) === 'completed').length },
+                    { value: 'all', label: 'All', count: allStudents.filter(s => cardsGrades.includes(s.grade)).length },
+                    { value: 'not_started', label: 'Not Started', count: allStudents.filter(s => cardsGrades.includes(s.grade) && getRowStatus(s) === 'not_started').length },
+                    { value: 'incomplete', label: 'Incomplete', count: allStudents.filter(s => cardsGrades.includes(s.grade) && getRowStatus(s) === 'incomplete').length },
+                    { value: 'completed', label: 'Completed', count: allStudents.filter(s => cardsGrades.includes(s.grade) && getRowStatus(s) === 'completed').length },
                   ].map(opt => (
                     <button
                       key={opt.value}

@@ -3,6 +3,26 @@ import { hasFailedTest, needsRescreen, getFailedTests, getRowStatus, formatTestR
 import { TEST_RESULT_OPTIONS, VISION_ACUITY_OPTIONS, GRADE_OPTIONS } from '../constants/screeningOptions';
 
 /**
+ * Format vision value as "20/XX" - handles raw numbers and existing "20/XX" format
+ */
+function formatVision(value) {
+  if (!value) return '';
+  const v = String(value).trim();
+  
+  // If it's P or F, return as-is
+  if (v.toUpperCase() === 'P' || v.toUpperCase() === 'F') return v;
+  
+  // If it's already in 20/XX format, return as-is
+  if (v.startsWith('20/')) return v;
+  
+  // If it's a number (like "20", "30", "40"), format as 20/XX
+  const num = parseInt(v);
+  if (!isNaN(num)) return `20/${num}`;
+  
+  return v;
+}
+
+/**
  * Calculate which tests are state-required based on grade/status/gender
  */
 function getStateRequiredTests(student) {
@@ -134,13 +154,19 @@ function RequiredBadge({ isStateRequired, isEnabled, onToggle, isEditing }) {
 /**
  * Simple select component
  */
-function SelectField({ value, onChange, options, disabled, isFailed }) {
+function SelectField({ value, onChange, options, disabled, isFailed, formatValue }) {
   const baseClass = "w-full px-2 py-1.5 text-sm border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500";
   const failedClass = isFailed ? "border-red-300 bg-red-50 text-red-700 font-semibold" : "border-gray-300";
   const disabledClass = disabled ? "bg-gray-50 text-gray-700" : "";
   
   if (disabled) {
-    const displayVal = options.find(o => o.value === value)?.label || displayValue(value);
+    // Try to find matching option label, or format the raw value
+    let displayVal = options.find(o => o.value === value)?.label;
+    if (!displayVal && value) {
+      displayVal = formatValue ? formatValue(value) : displayValue(value);
+    }
+    if (!displayVal) displayVal = displayValue(value);
+    
     return (
       <div className={`px-2 py-1.5 text-sm rounded-md ${isFailed ? 'bg-red-50 text-red-700 font-semibold' : 'text-gray-700'}`}>
         {displayVal}
@@ -467,19 +493,19 @@ export function StudentCardExpanded({
                   <tr className="border-t border-gray-200">
                     <td className="px-2 py-2 text-xs font-medium text-gray-600">Initial</td>
                     <td className="px-2 py-1">
-                      <SelectField value={student.vision_initial_right} onChange={(v) => onChange('vision_initial_right', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.vision_initial_right)} />
+                      <SelectField value={student.vision_initial_right} onChange={(v) => onChange('vision_initial_right', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.vision_initial_right)} formatValue={formatVision} />
                     </td>
                     <td className="px-2 py-1">
-                      <SelectField value={student.vision_initial_left} onChange={(v) => onChange('vision_initial_left', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.vision_initial_left)} />
+                      <SelectField value={student.vision_initial_left} onChange={(v) => onChange('vision_initial_left', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.vision_initial_left)} formatValue={formatVision} />
                     </td>
                   </tr>
                   <tr className="border-t border-gray-200 bg-gray-50/50">
                     <td className="px-2 py-2 text-xs font-medium text-gray-600">Rescreen</td>
                     <td className="px-2 py-1">
-                      <SelectField value={student.vision_rescreen_right} onChange={(v) => onChange('vision_rescreen_right', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} />
+                      <SelectField value={student.vision_rescreen_right} onChange={(v) => onChange('vision_rescreen_right', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} formatValue={formatVision} />
                     </td>
                     <td className="px-2 py-1">
-                      <SelectField value={student.vision_rescreen_left} onChange={(v) => onChange('vision_rescreen_left', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} />
+                      <SelectField value={student.vision_rescreen_left} onChange={(v) => onChange('vision_rescreen_left', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} formatValue={formatVision} />
                     </td>
                   </tr>
                 </tbody>

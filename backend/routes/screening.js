@@ -77,6 +77,15 @@ router.get('/data', async (req, res, next) => {
       studentsQuery = studentsQuery.eq('school', school);
     }
 
+    // Apply year filter on students table - only show students created in that year
+    // Students are imported annually, so a student created in 2025 shouldn't appear when searching 2024
+    if (year) {
+      const yearStart = `${year}-01-01T00:00:00Z`;
+      const yearEnd = `${year}-12-31T23:59:59Z`;
+      studentsQuery = studentsQuery.gte('created_at', yearStart);
+      studentsQuery = studentsQuery.lte('created_at', yearEnd);
+    }
+
     // Apply grade filter if provided
     if (grade) {
       const grades = grade.split(',');
@@ -100,6 +109,12 @@ router.get('/data', async (req, res, next) => {
       .select('*', { count: 'exact', head: true });
     
     if (school !== 'all') countQuery.eq('school', school);
+    if (year) {
+      const yearStart = `${year}-01-01T00:00:00Z`;
+      const yearEnd = `${year}-12-31T23:59:59Z`;
+      countQuery.gte('created_at', yearStart);
+      countQuery.lte('created_at', yearEnd);
+    }
     if (grade) {
       const grades = grade.split(',');
       countQuery.in('grade', grades);

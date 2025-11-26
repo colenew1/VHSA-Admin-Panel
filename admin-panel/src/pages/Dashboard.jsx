@@ -86,8 +86,12 @@ export default function DashboardNew() {
   const [showFailed, setShowFailed] = useState(false);
   const [showRescreen, setShowRescreen] = useState(false);
   const [gradeFilter, setGradeFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('name'); // name, grade, date, status
+  const [sortBy, setSortBy] = useState('grade'); // name, grade, date, status
   const [sortDir, setSortDir] = useState('asc');
+  
+  // Advanced filters
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [teacherSearch, setTeacherSearch] = useState('');
   
   // Pagination
   const [pageSize, setPageSize] = useState(50);
@@ -203,6 +207,12 @@ export default function DashboardNew() {
       filtered = filtered.filter(s => s.grade === gradeFilter);
     }
     
+    // Filter by teacher search
+    if (teacherSearch.trim()) {
+      const query = teacherSearch.toLowerCase().trim();
+      filtered = filtered.filter(s => s.teacher?.toLowerCase().includes(query));
+    }
+    
     // Sort
     filtered.sort((a, b) => {
       let aVal, bVal;
@@ -239,7 +249,7 @@ export default function DashboardNew() {
     });
     
     return filtered;
-  }, [allStudents, searchQuery, statusFilter, showFailed, showRescreen, gradeFilter, sortBy, sortDir]);
+  }, [allStudents, searchQuery, statusFilter, showFailed, showRescreen, gradeFilter, teacherSearch, sortBy, sortDir]);
   
   // Paginate
   const paginatedStudents = useMemo(() => {
@@ -290,9 +300,10 @@ export default function DashboardNew() {
     setShowRescreen(false);
     setSearchQuery('');
     setGradeFilter('all');
+    setTeacherSearch('');
   };
   
-  const hasActiveFilters = statusFilter || showFailed || showRescreen || searchQuery || gradeFilter !== 'all';
+  const hasActiveFilters = statusFilter || showFailed || showRescreen || searchQuery || gradeFilter !== 'all' || teacherSearch;
   
   return (
     <div className="min-h-screen bg-gray-50">
@@ -485,7 +496,57 @@ export default function DashboardNew() {
                 Clear all
               </button>
             )}
+            
+            <div className="ml-auto">
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className={`text-sm font-medium flex items-center gap-1 px-2 py-1 rounded transition-all ${
+                  showAdvanced || teacherSearch 
+                    ? 'text-blue-700 bg-blue-50' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                </svg>
+                Advanced
+                {teacherSearch && <span className="w-2 h-2 bg-blue-500 rounded-full"></span>}
+              </button>
+            </div>
           </div>
+          
+          {/* Advanced Filters (Teacher Search) */}
+          {showAdvanced && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium text-gray-600">Teacher:</label>
+                <div className="relative flex-1 max-w-xs">
+                  <input
+                    type="text"
+                    value={teacherSearch}
+                    onChange={(e) => { setTeacherSearch(e.target.value); setCurrentPage(0); }}
+                    placeholder="Search by teacher name..."
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  {teacherSearch && (
+                    <button
+                      onClick={() => setTeacherSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+                {teacherSearch && (
+                  <span className="text-sm text-gray-500">
+                    Showing students with teacher matching "{teacherSearch}"
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
           
           {/* Row 3: Results count and pagination */}
           <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
