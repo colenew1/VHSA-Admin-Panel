@@ -39,6 +39,67 @@ export function hasFailedTest(student) {
 }
 
 /**
+ * Get list of which tests failed
+ */
+export function getFailedTests(student) {
+  const isFail = (value) => {
+    if (!value) return false;
+    const normalized = value.toString().toUpperCase().trim();
+    return normalized === 'F' || normalized === 'FAIL';
+  };
+
+  const failed = [];
+  
+  if (isFail(student.vision_overall) || isFail(student.vision_initial_right) || isFail(student.vision_initial_left)) {
+    failed.push('Vision');
+  }
+  if (isFail(student.hearing_overall) || 
+      isFail(student.hearing_initial_right_1000) || isFail(student.hearing_initial_right_2000) || isFail(student.hearing_initial_right_4000) ||
+      isFail(student.hearing_initial_left_1000) || isFail(student.hearing_initial_left_2000) || isFail(student.hearing_initial_left_4000)) {
+    failed.push('Hearing');
+  }
+  if (isFail(student.acanthosis_initial)) {
+    failed.push('AN');
+  }
+  if (isFail(student.scoliosis_initial)) {
+    failed.push('Scoliosis');
+  }
+  
+  return failed;
+}
+
+/**
+ * Check if student needs rescreen (has rescreen data or failed initial requiring rescreen)
+ */
+export function needsRescreen(student) {
+  const isFail = (value) => {
+    if (!value) return false;
+    const normalized = value.toString().toUpperCase().trim();
+    return normalized === 'F' || normalized === 'FAIL';
+  };
+  
+  // Has any rescreen data entered
+  const hasRescreenData = 
+    student.vision_rescreen_right || student.vision_rescreen_left ||
+    student.hearing_rescreen_right_1000 || student.hearing_rescreen_right_2000 || student.hearing_rescreen_right_4000 ||
+    student.hearing_rescreen_left_1000 || student.hearing_rescreen_left_2000 || student.hearing_rescreen_left_4000 ||
+    student.acanthosis_rescreen || student.scoliosis_rescreen;
+  
+  if (hasRescreenData) return true;
+  
+  // Failed initial but no rescreen yet - needs rescreen
+  const failedInitialVision = isFail(student.vision_initial_right) || isFail(student.vision_initial_left) || isFail(student.vision_overall);
+  const failedInitialHearing = isFail(student.hearing_initial_right_1000) || isFail(student.hearing_initial_right_2000) || 
+                               isFail(student.hearing_initial_right_4000) || isFail(student.hearing_initial_left_1000) ||
+                               isFail(student.hearing_initial_left_2000) || isFail(student.hearing_initial_left_4000) ||
+                               isFail(student.hearing_overall);
+  const failedInitialAN = isFail(student.acanthosis_initial);
+  const failedInitialScoliosis = isFail(student.scoliosis_initial);
+  
+  return failedInitialVision || failedInitialHearing || failedInitialAN || failedInitialScoliosis;
+}
+
+/**
  * Check if any screening data has been entered
  */
 function hasScreeningData(student) {
@@ -134,6 +195,15 @@ export function formatTestResult(result) {
     return 'FAIL';
   }
   return result.toString();
+}
+
+/**
+ * Check if a specific test result is a fail
+ */
+export function isTestFail(result) {
+  if (!result) return false;
+  const normalized = result.toString().toUpperCase().trim();
+  return normalized === 'F' || normalized === 'FAIL';
 }
 
 /**

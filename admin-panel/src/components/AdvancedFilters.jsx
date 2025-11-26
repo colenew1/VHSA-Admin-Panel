@@ -51,6 +51,7 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
     cleared.statusIncomplete = true;
     cleared.statusFailed = true;
     cleared.statusAbsent = true;
+    cleared.statusNeedsRescreen = true;
     onChange(cleared);
     if (onClear) onClear();
   };
@@ -58,7 +59,7 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
   const hasActiveFilters = filters.grade || filters.gender || filters.status || filters.returning ||
     filters.statusNotStarted === false || filters.statusCompleted === false ||
     filters.statusIncomplete === false || filters.statusFailed === false ||
-    filters.statusAbsent === false;
+    filters.statusAbsent === false || filters.statusNeedsRescreen === false;
 
   return (
     <div className="mb-4">
@@ -260,6 +261,30 @@ export default function AdvancedFilters({ filters, onChange, onClear }) {
                         : 'bg-white border-blue-400'
                     }`}></span>
                     <span>Absent</span>
+                  </span>
+                </button>
+                
+                {/* Needs Rescreen */}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onChange({ ...filters, statusNeedsRescreen: !filters.statusNeedsRescreen });
+                  }}
+                  className={`px-4 py-2 text-sm font-medium rounded-full border-2 transition-all ${
+                    filters.statusNeedsRescreen
+                      ? 'bg-purple-100 border-purple-500 shadow-md'
+                      : 'bg-purple-100 border-purple-300 hover:border-purple-400'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className={`w-4 h-4 rounded-full border-2 ${
+                      filters.statusNeedsRescreen
+                        ? 'bg-gray-900 border-gray-900'
+                        : 'bg-white border-purple-400'
+                    }`}></span>
+                    <span>Needs Rescreen</span>
                   </span>
                 </button>
               </div>

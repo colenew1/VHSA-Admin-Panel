@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getScreeningData, updateScreening, getSchools } from '../api/client';
-import { getRowStatus, getRowColor, hasFailedTest, formatDate, formatDOB, formatTestResult, getVisionOverall, getHearingOverall } from '../utils/statusHelpers';
+import { getRowStatus, getRowColor, hasFailedTest, needsRescreen, getFailedTests, formatDate, formatDOB, formatTestResult, isTestFail, getVisionOverall, getHearingOverall } from '../utils/statusHelpers';
 import { TEST_RESULT_OPTIONS, VISION_ACUITY_OPTIONS, GRADE_OPTIONS } from '../constants/screeningOptions';
 import EditableCell from '../components/EditableCell';
 import AdvancedFilters from '../components/AdvancedFilters';
@@ -26,6 +26,7 @@ export default function Dashboard() {
     statusIncomplete: true,
     statusFailed: true,
     statusAbsent: true,
+    statusNeedsRescreen: true,
   });
   
   // Pagination state
@@ -182,28 +183,56 @@ export default function Dashboard() {
     // Filter by status checkboxes - only apply if search has been triggered
     // This allows users to select multiple statuses before clicking Search
     if (hasSearched) {
-    filtered = filtered.filter(student => {
-      const status = getRowStatus(student);
-      const failed = hasFailedTest(student);
-      
-      // Check if student has failed tests
-      if (failed && !filters.statusFailed) {
-        return false;
-      }
-      
-      switch (status) {
-        case 'not_started':
-          return filters.statusNotStarted;
-        case 'completed':
-          return filters.statusCompleted;
-        case 'incomplete':
-          return filters.statusIncomplete;
-        case 'absent':
-          return filters.statusAbsent;
-        default:
-          return true;
-      }
-    });
+      filtered = filtered.filter(student => {
+        const status = getRowStatus(student);
+        const hasFailed = hasFailedTest(student);
+        const hasRescreen = needsRescreen(student);
+        
+        // Track reasons this student should be shown
+        let shouldShow = false;
+        
+        // If "Failed" filter is on and student has failed tests, show them
+        if (filters.statusFailed && hasFailed) {
+          shouldShow = true;
+        }
+        
+        // If "Needs Rescreen" filter is on and student needs rescreen, show them
+        if (filters.statusNeedsRescreen && hasRescreen) {
+          shouldShow = true;
+        }
+        
+        // Also check by status (but Failed/Rescreen are special - they can match ANY status)
+        if (filters.statusNotStarted && status === 'not_started') {
+          shouldShow = true;
+        }
+        if (filters.statusCompleted && status === 'completed') {
+          shouldShow = true;
+        }
+        if (filters.statusIncomplete && status === 'incomplete') {
+          shouldShow = true;
+        }
+        if (filters.statusAbsent && status === 'absent') {
+          shouldShow = true;
+        }
+        
+        // Special case: If ONLY "Failed" is selected (all others are off), show only failed
+        const onlyFailedSelected = filters.statusFailed && 
+          !filters.statusNotStarted && !filters.statusCompleted && 
+          !filters.statusIncomplete && !filters.statusAbsent && !filters.statusNeedsRescreen;
+        if (onlyFailedSelected) {
+          return hasFailed;
+        }
+        
+        // Special case: If ONLY "Needs Rescreen" is selected, show only those
+        const onlyRescreenSelected = filters.statusNeedsRescreen && 
+          !filters.statusNotStarted && !filters.statusCompleted && 
+          !filters.statusIncomplete && !filters.statusAbsent && !filters.statusFailed;
+        if (onlyRescreenSelected) {
+          return hasRescreen;
+        }
+        
+        return shouldShow;
+      });
     }
 
     // Apply column filters
@@ -1159,13 +1188,35 @@ export default function Dashboard() {
                 // Compute status and color from displayData (includes unsaved changes) so colors update immediately
                 const status = getRowStatus(displayData);
                 const rowColor = getRowColor(status);
-                const failed = hasFailedTest(displayData);
+                const hasFailed = hasFailedTest(displayData);
+                const hasRescreen = needsRescreen(displayData);
+                const failedTests = hasFailed ? getFailedTests(displayData) : [];
 
                 return (
-                  <tr key={uniqueId} className={`${rowColor} border-b border-gray-200 hover:bg-opacity-90 transition-colors ${failed ? 'ring-2 ring-red-500 border-red-500' : ''}`}>
-                    {/* Row Number */}
-                    <td className="bg-inherit border-r-2 border-gray-300 px-3 py-3 text-sm text-gray-600 text-center font-medium">
-                      {currentPage * pageSize + index + 1}
+                  <tr key={uniqueId} className={`${rowColor} border-b border-gray-200 hover:bg-opacity-90 transition-colors`}>
+                    {/* Row Number + Status Badges */}
+                    <td className="bg-inherit border-r-2 border-gray-300 px-2 py-2 text-center">
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-sm text-gray-600 font-medium">
+                          {currentPage * pageSize + index + 1}
+                        </span>
+                        {hasFailed && (
+                          <span 
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-300"
+                            title={`Failed: ${failedTests.join(', ')}`}
+                          >
+                            FAIL
+                          </span>
+                        )}
+                        {hasRescreen && (
+                          <span 
+                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 border border-purple-300"
+                            title="Needs Rescreen"
+                          >
+                            RS
+                          </span>
+                        )}
+                      </div>
                     </td>
                     
                     {/* Grade */}
@@ -1317,13 +1368,13 @@ export default function Dashboard() {
                     </td>
                     
                     {/* Vision Overall */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.vision_overall) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={isEditing ? (displayData.vision_overall || '') : formatTestResult(displayData.vision_overall)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'vision_overall', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-bold"
+                        className={`text-sm text-center font-bold ${isTestFail(displayData.vision_overall) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
@@ -1371,182 +1422,182 @@ export default function Dashboard() {
                     </td>
                     
                     {/* Hearing Overall */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_overall) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={isEditing ? (displayData.hearing_overall || '') : formatTestResult(displayData.hearing_overall)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_overall', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-bold"
+                        className={`text-sm text-center font-bold ${isTestFail(displayData.hearing_overall) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
                     
                     {/* Hearing Results - Initial Right (1k, 2k, 4k) */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_initial_right_1000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_right_1000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_right_1000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_initial_right_1000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_initial_right_2000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_right_2000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_right_2000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_initial_right_2000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_initial_right_4000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_right_4000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_right_4000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_initial_right_4000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
                     {/* Hearing Results - Initial Left (1k, 2k, 4k) */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_initial_left_1000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_left_1000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_left_1000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_initial_left_1000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_initial_left_2000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_left_2000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_left_2000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_initial_left_2000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_initial_left_4000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_initial_left_4000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_initial_left_4000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_initial_left_4000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
                     {/* Hearing Results - Rescreen Right (1k, 2k, 4k) */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_rescreen_right_1000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_right_1000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_right_1000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_rescreen_right_1000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_rescreen_right_2000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_right_2000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_right_2000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_rescreen_right_2000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_rescreen_right_4000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_right_4000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_right_4000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_rescreen_right_4000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
                     {/* Hearing Results - Rescreen Left (1k, 2k, 4k) */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_rescreen_left_1000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_left_1000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_left_1000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_rescreen_left_1000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.hearing_rescreen_left_2000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_left_2000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_left_2000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_rescreen_left_2000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r-2 border-gray-300 px-3 py-3">
+                    <td className={`border-r-2 border-gray-300 px-3 py-3 ${isTestFail(displayData.hearing_rescreen_left_4000) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.hearing_rescreen_left_4000)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'hearing_rescreen_left_4000', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.hearing_rescreen_left_4000) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
                     
                     {/* AN Results */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.acanthosis_initial) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.acanthosis_initial)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'acanthosis_initial', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.acanthosis_initial) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r-2 border-gray-300 px-3 py-3">
+                    <td className={`border-r-2 border-gray-300 px-3 py-3 ${isTestFail(displayData.acanthosis_rescreen) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.acanthosis_rescreen)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'acanthosis_rescreen', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.acanthosis_rescreen) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
                     
                     {/* Spinal Results */}
-                    <td className="border-r border-gray-200 px-3 py-3">
+                    <td className={`border-r border-gray-200 px-3 py-3 ${isTestFail(displayData.scoliosis_initial) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.scoliosis_initial)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'scoliosis_initial', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.scoliosis_initial) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
-                    <td className="border-r-2 border-gray-300 px-3 py-3">
+                    <td className={`border-r-2 border-gray-300 px-3 py-3 ${isTestFail(displayData.scoliosis_rescreen) ? 'bg-red-100' : ''}`}>
                       <EditableCell
                         value={formatTestResult(displayData.scoliosis_rescreen)}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'scoliosis_rescreen', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
                         options={isEditing ? TEST_RESULT_OPTIONS : []}
-                        className="text-sm text-center font-medium"
+                        className={`text-sm text-center font-medium ${isTestFail(displayData.scoliosis_rescreen) ? 'text-red-700' : ''}`}
                         disabled={!isEditing}
                       />
                     </td>
