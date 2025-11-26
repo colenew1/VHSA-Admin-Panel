@@ -92,9 +92,10 @@ function StatusBadge({ status, hasFailed, rescreenStatus }) {
   
   const config = statusConfig[status] || statusConfig.not_started;
   
-  // Determine rescreen badge
-  const hasRescreenNeeded = rescreenStatus?.pending?.length > 0;
-  const hasRescreened = rescreenStatus?.completed?.length > 0; // Rescreen was done (passed or failed)
+  // Determine rescreen badge state
+  const hasPendingRescreens = rescreenStatus?.pending?.length > 0; // Some rescreens still needed
+  const hadFailedTests = rescreenStatus?.needed?.length > 0; // Had tests that failed
+  const allRescreensDone = hadFailedTests && rescreenStatus?.pending?.length === 0; // All rescreens completed
   
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
@@ -102,20 +103,22 @@ function StatusBadge({ status, hasFailed, rescreenStatus }) {
         {config.label}
       </span>
       
-      {/* Show FAILED if any initial test failed and no rescreen done yet */}
-      {hasFailed && !hasRescreened && (
+      {/* Show FAILED if any initial test failed and rescreens not all done yet */}
+      {hasFailed && !allRescreensDone && (
         <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">
           FAILED
         </span>
       )}
       
-      {/* Rescreen status badges - mutually exclusive: either needs rescreen OR was rescreened */}
-      {hasRescreenNeeded && !hasRescreened && (
+      {/* Rescreen Needed - show while ANY rescreens are pending */}
+      {hasPendingRescreens && (
         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 border border-purple-300">
           Rescreen Needed
         </span>
       )}
-      {hasRescreened && (
+      
+      {/* Rescreened - only show when ALL rescreens are complete */}
+      {allRescreensDone && (
         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-300">
           Rescreened
         </span>
@@ -278,44 +281,28 @@ function EditField({ label, value, onChange, type = 'text', options = [], disabl
 
 /**
  * Calculate remaining tests for a student
+ * Uses the *_required fields (which default to state requirements but can be overridden)
  */
 function getRemainingTests(student) {
-  const { grade, status: studentStatus, gender } = student;
-  const isNew = studentStatus === 'New';
   const remaining = [];
   
-  let needsVision = false, needsHearing = false, needsAN = false, needsScoliosis = false;
+  // Get state requirements as defaults
+  const stateRequired = getStateRequiredTests(student);
   
-  if (grade === 'Pre-K (4)' || grade === 'Kindergarten') {
-    needsVision = true; needsHearing = true;
-  } else if (grade === '1st') {
-    needsVision = true; needsHearing = true; needsAN = true;
-  } else if (grade === '2nd' && isNew) {
-    needsVision = true; needsHearing = true; needsAN = true;
-  } else if (grade === '3rd') {
-    needsVision = true; needsHearing = true; needsAN = true;
-  } else if (grade === '4th' && isNew) {
-    needsVision = true; needsHearing = true; needsAN = true;
-  } else if (grade === '5th') {
-    needsVision = true; needsHearing = true; needsAN = true;
-    if (gender === 'Female') needsScoliosis = true;
-  } else if (grade === '6th' && isNew) {
-    needsVision = true; needsHearing = true; needsAN = true;
-  } else if (grade === '7th') {
-    needsVision = true; needsHearing = true; needsAN = true;
-    if (gender === 'Female') needsScoliosis = true;
-  } else if (grade === '8th' && isNew) {
-    needsVision = true; needsHearing = true; needsAN = true;
-    if (gender === 'Male') needsScoliosis = true;
-  } else if (['9th', '10th', '11th', '12th'].includes(grade) && isNew) {
-    needsVision = true; needsHearing = true; needsAN = true;
-  }
+  // Use the *_required field if it exists (explicitly set), otherwise fall back to state requirement
+  // If *_required is explicitly false, the screening is not needed even if state required
+  const needsVision = student.vision_required ?? stateRequired.vision;
+  const needsHearing = student.hearing_required ?? stateRequired.hearing;
+  const needsAN = student.acanthosis_required ?? stateRequired.acanthosis;
+  const needsScoliosis = student.scoliosis_required ?? stateRequired.scoliosis;
   
+  // Check if each test is done
   const visionDone = student.vision_complete || (student.vision_initial_right && student.vision_initial_left);
   const hearingDone = student.hearing_complete || (student.hearing_initial_right_1000 && student.hearing_initial_left_1000);
   const anDone = student.acanthosis_complete || student.acanthosis_initial;
   const scoliosisDone = student.scoliosis_complete || student.scoliosis_initial;
   
+  // Only show in "Needs" if required AND not done
   if (needsVision && !visionDone) remaining.push('V');
   if (needsHearing && !hearingDone) remaining.push('H');
   if (needsAN && !anDone) remaining.push('A');

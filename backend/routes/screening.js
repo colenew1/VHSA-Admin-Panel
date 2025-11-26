@@ -509,14 +509,22 @@ router.put('/:unique_id', async (req, res, next) => {
     let screeningData = null;
     if (Object.keys(filteredData).length > 0) {
       console.log('Checking for existing screening record...');
-      // First check if screening record exists
+      console.log('Filtered data to save:', JSON.stringify(filteredData, null, 2));
+      
+      // First check if screening record exists - use maybeSingle() to avoid error on no rows
       const { data: existingRecord, error: checkError } = await supabase
         .from('screening_results')
         .select('id')
         .eq('unique_id', unique_id)
-        .single();
+        .maybeSingle();
       
-      console.log('Existing record check:', existingRecord ? 'Found' : 'Not found', checkError ? `Error: ${checkError.message}` : '');
+      // Only throw if it's a real error, not just "no rows found"
+      if (checkError && checkError.code !== 'PGRST116') {
+        console.error('Error checking for existing record:', checkError);
+        throw checkError;
+      }
+      
+      console.log('Existing record check:', existingRecord ? `Found (id: ${existingRecord.id})` : 'Not found');
 
       if (existingRecord) {
         // Update existing record
@@ -530,10 +538,11 @@ router.put('/:unique_id', async (req, res, next) => {
 
         if (error) {
           console.error('Error updating screening:', error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
           throw error;
         }
         screeningData = data;
-        console.log('Screening record updated');
+        console.log('Screening record updated successfully');
       } else {
         // Create new screening record - need to get student_id first
         console.log('Creating new screening record...');
@@ -547,7 +556,7 @@ router.put('/:unique_id', async (req, res, next) => {
         
         if (studentLookupError || !studentRecord) {
           console.error('Could not find student for unique_id:', unique_id);
-          throw new Error('Student not found');
+          throw new Error(`Student not found with unique_id: ${unique_id}`);
         }
         
         const insertData = { 
@@ -555,7 +564,7 @@ router.put('/:unique_id', async (req, res, next) => {
           unique_id, 
           ...filteredData 
         };
-        console.log('Insert data:', insertData);
+        console.log('Insert data:', JSON.stringify(insertData, null, 2));
         
         const { data, error } = await supabase
           .from('screening_results')
@@ -565,10 +574,11 @@ router.put('/:unique_id', async (req, res, next) => {
 
         if (error) {
           console.error('Error creating screening record:', error);
+          console.error('Error details:', JSON.stringify(error, null, 2));
           throw error;
         }
         screeningData = data;
-        console.log('Screening record created');
+        console.log('Screening record created successfully');
       }
     }
 

@@ -220,6 +220,7 @@ function hasScreeningData(student) {
 
 /**
  * Determine the computed status of a student's screening (without override)
+ * IMPORTANT: "completed" only when all screenings done AND all rescreens done (if any failed)
  */
 export function getComputedStatus(student) {
   // Not started if no screening record
@@ -238,9 +239,23 @@ export function getComputedStatus(student) {
   const acanthosisComplete = !student.acanthosis_required || (student.acanthosis_complete === true);
   const scoliosisComplete = !student.scoliosis_required || (student.scoliosis_complete === true);
 
-  const allComplete = visionComplete && hearingComplete && acanthosisComplete && scoliosisComplete;
+  const allInitialComplete = visionComplete && hearingComplete && acanthosisComplete && scoliosisComplete;
 
-  return allComplete ? 'completed' : 'incomplete';
+  // If not all initial screenings complete, definitely incomplete
+  if (!allInitialComplete) {
+    return 'incomplete';
+  }
+
+  // All initial screenings done - but check if any failed and need rescreen
+  const rescreenStatus = getRescreenStatus(student);
+  
+  // If there are ANY pending rescreens (failed initial but rescreen not done), stay incomplete
+  if (rescreenStatus.pending.length > 0) {
+    return 'incomplete';
+  }
+
+  // All screenings done AND all rescreens done (or no rescreens needed) = complete
+  return 'completed';
 }
 
 /**

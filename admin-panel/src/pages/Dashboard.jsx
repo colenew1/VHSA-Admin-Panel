@@ -260,9 +260,53 @@ export default function DashboardNew() {
   const totalPages = Math.ceil(filteredStudents.length / pageSize);
   
   // Handle student selection
+  // Calculate state required tests for a student
+  const getStateRequirements = (student) => {
+    const { grade, status, gender } = student;
+    const isNew = status === 'New';
+    const req = { vision: false, hearing: false, acanthosis: false, scoliosis: false };
+    
+    if (grade === 'Pre-K (4)' || grade === 'Kindergarten') {
+      req.vision = true; req.hearing = true;
+    } else if (grade === '1st') {
+      req.vision = true; req.hearing = true; req.acanthosis = true;
+    } else if (grade === '2nd' && isNew) {
+      req.vision = true; req.hearing = true; req.acanthosis = true;
+    } else if (grade === '3rd') {
+      req.vision = true; req.hearing = true; req.acanthosis = true;
+    } else if (grade === '4th' && isNew) {
+      req.vision = true; req.hearing = true; req.acanthosis = true;
+    } else if (grade === '5th') {
+      req.vision = true; req.hearing = true; req.acanthosis = true;
+      if (gender === 'Female') req.scoliosis = true;
+    } else if (grade === '6th' && isNew) {
+      req.vision = true; req.hearing = true; req.acanthosis = true;
+    } else if (grade === '7th') {
+      req.vision = true; req.hearing = true; req.acanthosis = true;
+      if (gender === 'Female') req.scoliosis = true;
+    } else if (grade === '8th' && isNew) {
+      req.vision = true; req.hearing = true; req.acanthosis = true;
+      if (gender === 'Male') req.scoliosis = true;
+    } else if (['9th', '10th', '11th', '12th'].includes(grade) && isNew) {
+      req.vision = true; req.hearing = true; req.acanthosis = true;
+    }
+    return req;
+  };
+  
   const handleSelectStudent = (student) => {
     setSelectedStudent(student);
-    setEditedData({ ...student });
+    
+    // Initialize required fields to state requirements if not already set
+    const stateReq = getStateRequirements(student);
+    const initializedData = {
+      ...student,
+      vision_required: student.vision_required ?? stateReq.vision,
+      hearing_required: student.hearing_required ?? stateReq.hearing,
+      acanthosis_required: student.acanthosis_required ?? stateReq.acanthosis,
+      scoliosis_required: student.scoliosis_required ?? stateReq.scoliosis,
+    };
+    
+    setEditedData(initializedData);
     setIsEditing(false);
   };
   
@@ -289,7 +333,15 @@ export default function DashboardNew() {
   
   // Handle cancel edit
   const handleCancelEdit = () => {
-    setEditedData({ ...selectedStudent });
+    // Re-initialize with state requirements for required fields
+    const stateReq = getStateRequirements(selectedStudent);
+    setEditedData({
+      ...selectedStudent,
+      vision_required: selectedStudent.vision_required ?? stateReq.vision,
+      hearing_required: selectedStudent.hearing_required ?? stateReq.hearing,
+      acanthosis_required: selectedStudent.acanthosis_required ?? stateReq.acanthosis,
+      scoliosis_required: selectedStudent.scoliosis_required ?? stateReq.scoliosis,
+    });
     setIsEditing(false);
   };
   
