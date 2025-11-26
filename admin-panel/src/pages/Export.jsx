@@ -49,6 +49,24 @@ function isFail(value) {
   return v === 'F' || v === 'FAIL' || (v.startsWith('20/') && parseInt(v.split('/')[1]) > 40);
 }
 
+// Format vision value as "20/XX" - handles raw numbers and existing "20/XX" format
+function formatVision(value) {
+  if (!value) return '';
+  const v = String(value).trim();
+  
+  // If it's P or F, return as-is
+  if (v.toUpperCase() === 'P' || v.toUpperCase() === 'F') return v;
+  
+  // If it's already in 20/XX format, return as-is
+  if (v.startsWith('20/')) return v;
+  
+  // If it's a number (like "20", "30", "40"), format as 20/XX
+  const num = parseInt(v);
+  if (!isNaN(num)) return `20/${num}`;
+  
+  return v;
+}
+
 export default function Export() {
   const toast = useToast();
   const [activeTab, setActiveTab] = useState('cards');
@@ -60,6 +78,15 @@ export default function Export() {
   const [reportNotes, setReportNotes] = useState('');
   const [selectedGrades, setSelectedGrades] = useState([...ALL_GRADES]);
   const [gradePreset, setGradePreset] = useState('all');
+  
+  // Student export state
+  const [exportGrades, setExportGrades] = useState([...ALL_GRADES]);
+  const [exportGradePreset, setExportGradePreset] = useState('all');
+  
+  // Cards export state
+  const [cardsGrades, setCardsGrades] = useState([...ALL_GRADES]);
+  const [cardsGradePreset, setCardsGradePreset] = useState('all');
+  const [cardsTeacher, setCardsTeacher] = useState('all');
   
   // Fetch schools
   const { data: schoolsData } = useQuery({
@@ -85,11 +112,34 @@ export default function Export() {
   
   const allStudents = screeningData?.data || [];
   
-  // Filter students by status
+  // Get unique teachers from current data
+  const teachers = useMemo(() => {
+    const teacherSet = new Set();
+    allStudents.forEach(s => {
+      if (s.teacher) teacherSet.add(s.teacher);
+    });
+    return Array.from(teacherSet).sort();
+  }, [allStudents]);
+  
+  // Filter students for cards - by status, grade, and teacher
   const filteredStudents = useMemo(() => {
-    if (statusFilter === 'all') return allStudents;
-    return allStudents.filter(s => getRowStatus(s) === statusFilter);
-  }, [allStudents, statusFilter]);
+    let filtered = allStudents;
+    
+    // Filter by status
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(s => getRowStatus(s) === statusFilter);
+    }
+    
+    // Filter by grade
+    filtered = filtered.filter(s => cardsGrades.includes(s.grade));
+    
+    // Filter by teacher
+    if (cardsTeacher !== 'all') {
+      filtered = filtered.filter(s => s.teacher === cardsTeacher);
+    }
+    
+    return filtered;
+  }, [allStudents, statusFilter, cardsGrades, cardsTeacher]);
   
   // Calculate reporting statistics - includes ALL selected grades even if empty
   const reportStats = useMemo(() => {
@@ -330,9 +380,14 @@ export default function Export() {
     printWindow.document.close();
   };
   
+  // Filter students for export based on selected grades
+  const exportFilteredStudents = useMemo(() => {
+    return allStudents.filter(s => exportGrades.includes(s.grade));
+  }, [allStudents, exportGrades]);
+  
   // Export students as CSV
   const exportStudentsCSV = () => {
-    if (allStudents.length === 0) {
+    if (exportFilteredStudents.length === 0) {
       toast.warning('No students to export');
       return;
     }
@@ -345,7 +400,7 @@ export default function Export() {
       'Acanthosis', 'Scoliosis', 'Notes'
     ];
     
-    const rows = allStudents.map(s => [
+    const rows = exportFilteredStudents.map(s => [
       s.unique_id || '',
       s.first_name || '',
       s.last_name || '',
@@ -356,8 +411,8 @@ export default function Export() {
       s.teacher || '',
       s.initial_screening_date ? formatDate(s.initial_screening_date) : '',
       getRowStatus(s),
-      s.vision_initial_right || '',
-      s.vision_initial_left || '',
+      formatVision(s.vision_initial_right),
+      formatVision(s.vision_initial_left),
       s.glasses_or_contacts || '',
       s.hearing_initial_right_1000 || '',
       s.hearing_initial_right_2000 || '',
@@ -597,15 +652,74 @@ export default function Export() {
                 Print cards for students to carry during screening. <strong>8 cards per page</strong> - designed to be cut with a paper cutter.
               </p>
               
+              {/* Grade Filter */}
+              <div className="mb-4 p-4 bg-gray-50 rounded-lg">
+                <label className="text-sm font-medium text-gray-700 block mb-2">Filter by Grade</label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {Object.entries(GRADE_PRESETS).map(([key, { label }]) => (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setCardsGradePreset(key);
+                        setCardsGrades([...GRADE_PRESETS[key].grades]);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                        cardsGradePreset === key
+                          ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                          : 'bg-white text-gray-600 border-2 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  {ALL_GRADES.map(grade => (
+                    <label key={grade} className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={cardsGrades.includes(grade)}
+                        onChange={(e) => {
+                          setCardsGradePreset('');
+                          if (e.target.checked) {
+                            setCardsGrades(prev => [...prev, grade].sort((a, b) => ALL_GRADES.indexOf(a) - ALL_GRADES.indexOf(b)));
+                          } else {
+                            setCardsGrades(prev => prev.filter(g => g !== grade));
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">{grade}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Teacher Filter */}
+              <div className="mb-4">
+                <label className="text-sm font-medium text-gray-700 block mb-2">Filter by Teacher</label>
+                <select
+                  value={cardsTeacher}
+                  onChange={(e) => setCardsTeacher(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-w-[200px]"
+                >
+                  <option value="all">All Teachers ({teachers.length})</option>
+                  {teachers.map(t => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+              
               {/* Status Filter */}
               <div className="mb-4">
                 <label className="text-sm font-medium text-gray-700 block mb-2">Filter by Status</label>
                 <div className="flex flex-wrap gap-2">
                   {[
-                    { value: 'all', label: 'All Students', count: allStudents.length },
-                    { value: 'not_started', label: 'Not Started', count: allStudents.filter(s => getRowStatus(s) === 'not_started').length },
-                    { value: 'incomplete', label: 'Incomplete', count: allStudents.filter(s => getRowStatus(s) === 'incomplete').length },
-                    { value: 'completed', label: 'Completed', count: allStudents.filter(s => getRowStatus(s) === 'completed').length },
+                    { value: 'all', label: 'All', count: allStudents.filter(s => cardsGrades.includes(s.grade) && (cardsTeacher === 'all' || s.teacher === cardsTeacher)).length },
+                    { value: 'not_started', label: 'Not Started', count: allStudents.filter(s => cardsGrades.includes(s.grade) && (cardsTeacher === 'all' || s.teacher === cardsTeacher) && getRowStatus(s) === 'not_started').length },
+                    { value: 'incomplete', label: 'Incomplete', count: allStudents.filter(s => cardsGrades.includes(s.grade) && (cardsTeacher === 'all' || s.teacher === cardsTeacher) && getRowStatus(s) === 'incomplete').length },
+                    { value: 'completed', label: 'Completed', count: allStudents.filter(s => cardsGrades.includes(s.grade) && (cardsTeacher === 'all' || s.teacher === cardsTeacher) && getRowStatus(s) === 'completed').length },
                   ].map(opt => (
                     <button
                       key={opt.value}
@@ -622,7 +736,7 @@ export default function Export() {
                 </div>
               </div>
               
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <div>
                   <p className="text-sm text-gray-600">
                     <span className="font-semibold text-gray-900">{filteredStudents.length}</span> cards will be generated
@@ -844,14 +958,58 @@ export default function Export() {
                 </div>
                 <button
                   onClick={exportStudentsCSV}
-                  disabled={allStudents.length === 0 || isLoading}
+                  disabled={exportFilteredStudents.length === 0 || isLoading}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                   </svg>
-                  Export CSV
+                  Export CSV ({exportFilteredStudents.length})
                 </button>
+              </div>
+              
+              {/* Grade Filter */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <label className="text-sm font-medium text-gray-700 block mb-2">Filter by Grade</label>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {Object.entries(GRADE_PRESETS).map(([key, { label }]) => (
+                    <button
+                      key={key}
+                      onClick={() => {
+                        setExportGradePreset(key);
+                        setExportGrades([...GRADE_PRESETS[key].grades]);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                        exportGradePreset === key
+                          ? 'bg-blue-100 text-blue-700 border-2 border-blue-300'
+                          : 'bg-white text-gray-600 border-2 border-gray-200 hover:bg-gray-100'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  {ALL_GRADES.map(grade => (
+                    <label key={grade} className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={exportGrades.includes(grade)}
+                        onChange={(e) => {
+                          setExportGradePreset('');
+                          if (e.target.checked) {
+                            setExportGrades(prev => [...prev, grade].sort((a, b) => ALL_GRADES.indexOf(a) - ALL_GRADES.indexOf(b)));
+                          } else {
+                            setExportGrades(prev => prev.filter(g => g !== grade));
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">{grade}</span>
+                    </label>
+                  ))}
+                </div>
               </div>
               
               {allStudents.length === 0 ? (
@@ -859,13 +1017,18 @@ export default function Export() {
                   <div className="text-4xl mb-2">📋</div>
                   <p>No students found. Select a school and year above.</p>
                 </div>
+              ) : exportFilteredStudents.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <div className="text-4xl mb-2">🔍</div>
+                  <p>No students match the selected grades. Try selecting more grades.</p>
+                </div>
               ) : (
                 <>
                   <p className="text-sm text-gray-600 mb-4">
-                    <span className="font-semibold text-gray-900">{allStudents.length}</span> students will be exported with the following information:
+                    <span className="font-semibold text-gray-900">{exportFilteredStudents.length}</span> of {allStudents.length} students will be exported with the following information:
                   </p>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                    {['Student ID', 'Name', 'Grade', 'Gender', 'DOB', 'School', 'Teacher', 'Screening Date', 'Vision Results', 'Hearing Results', 'Acanthosis', 'Scoliosis', 'Notes'].map(field => (
+                    {['Student ID', 'Name', 'Grade', 'Gender', 'DOB', 'School', 'Teacher', 'Screening Date', 'Vision Results (20/XX)', 'Hearing Results', 'Acanthosis', 'Scoliosis', 'Notes'].map(field => (
                       <div key={field} className="flex items-center gap-2 text-gray-600">
                         <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -885,25 +1048,29 @@ export default function Export() {
                             <th className="px-2 py-1.5 text-left">Name</th>
                             <th className="px-2 py-1.5 text-left">Grade</th>
                             <th className="px-2 py-1.5 text-left">School</th>
+                            <th className="px-2 py-1.5 text-left">Vision R</th>
+                            <th className="px-2 py-1.5 text-left">Vision L</th>
                             <th className="px-2 py-1.5 text-left">Status</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {allStudents.slice(0, 5).map((s, idx) => (
+                          {exportFilteredStudents.slice(0, 5).map((s, idx) => (
                             <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                               <td className="px-2 py-1.5 font-mono">{s.unique_id}</td>
                               <td className="px-2 py-1.5">{s.last_name}, {s.first_name}</td>
                               <td className="px-2 py-1.5">{s.grade}</td>
                               <td className="px-2 py-1.5">{s.school}</td>
+                              <td className="px-2 py-1.5">{formatVision(s.vision_initial_right) || '—'}</td>
+                              <td className="px-2 py-1.5">{formatVision(s.vision_initial_left) || '—'}</td>
                               <td className="px-2 py-1.5 capitalize">{getRowStatus(s).replace('_', ' ')}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
                     </div>
-                    {allStudents.length > 5 && (
+                    {exportFilteredStudents.length > 5 && (
                       <p className="text-xs text-gray-500 mt-2 text-center">
-                        ...and {allStudents.length - 5} more students
+                        ...and {exportFilteredStudents.length - 5} more students
                       </p>
                     )}
                   </div>

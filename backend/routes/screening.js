@@ -359,6 +359,10 @@ router.put('/:unique_id', async (req, res, next) => {
   try {
     const { unique_id } = req.params;
     const updateData = { ...req.body }; // Create a copy to avoid mutating the original
+    
+    console.log('=== UPDATE REQUEST ===');
+    console.log('unique_id:', unique_id);
+    console.log('Body keys:', Object.keys(req.body));
 
     // Separate student data from screening data (check before deleting)
     const studentDataFields = {};
@@ -460,9 +464,13 @@ router.put('/:unique_id', async (req, res, next) => {
 
     // studentDataFields already filtered, use it directly
     const studentUpdateData = studentDataFields;
+    
+    console.log('Student update fields:', studentUpdateData);
+    console.log('Screening update fields:', filteredData);
 
     // Update students table if there are student data fields to update
     if (Object.keys(studentUpdateData).length > 0) {
+      console.log('Updating students table...');
       const { data: studentData, error: studentError } = await supabase
         .from('students')
         .update(studentUpdateData)
@@ -476,22 +484,28 @@ router.put('/:unique_id', async (req, res, next) => {
       }
 
       if (!studentData) {
+        console.error('No student found with unique_id:', unique_id);
         return res.status(404).json({ error: 'Student record not found' });
       }
+      console.log('Student updated successfully');
     }
 
     // Update or create screening_results record
     let screeningData = null;
     if (Object.keys(filteredData).length > 0) {
+      console.log('Checking for existing screening record...');
       // First check if screening record exists
-      const { data: existingRecord } = await supabase
+      const { data: existingRecord, error: checkError } = await supabase
         .from('screening_results')
         .select('id')
         .eq('unique_id', unique_id)
         .single();
+      
+      console.log('Existing record check:', existingRecord ? 'Found' : 'Not found', checkError ? `Error: ${checkError.message}` : '');
 
       if (existingRecord) {
         // Update existing record
+        console.log('Updating existing screening record...');
         const { data, error } = await supabase
           .from('screening_results')
           .update(filteredData)
@@ -499,13 +513,38 @@ router.put('/:unique_id', async (req, res, next) => {
           .select()
           .single();
 
-        if (error) throw error;
+        if (error) {
+          console.error('Error updating screening:', error);
+          throw error;
+        }
         screeningData = data;
+        console.log('Screening record updated');
       } else {
-        // Create new screening record with the unique_id
+        // Create new screening record - need to get student_id first
+        console.log('Creating new screening record...');
+        
+        // Look up the student's internal ID
+        const { data: studentRecord, error: studentLookupError } = await supabase
+          .from('students')
+          .select('id')
+          .eq('unique_id', unique_id)
+          .single();
+        
+        if (studentLookupError || !studentRecord) {
+          console.error('Could not find student for unique_id:', unique_id);
+          throw new Error('Student not found');
+        }
+        
+        const insertData = { 
+          student_id: studentRecord.id,
+          unique_id, 
+          ...filteredData 
+        };
+        console.log('Insert data:', insertData);
+        
         const { data, error } = await supabase
           .from('screening_results')
-          .insert({ unique_id, ...filteredData })
+          .insert(insertData)
           .select()
           .single();
 
@@ -514,11 +553,13 @@ router.put('/:unique_id', async (req, res, next) => {
           throw error;
         }
         screeningData = data;
+        console.log('Screening record created');
       }
     }
 
     // If no updates were made, return error
     if (Object.keys(filteredData).length === 0 && Object.keys(studentUpdateData).length === 0) {
+      console.log('No valid fields to update');
       return res.status(400).json({ error: 'No valid fields to update' });
     }
 

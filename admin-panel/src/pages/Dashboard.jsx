@@ -86,8 +86,7 @@ export default function DashboardNew() {
   const [showFailed, setShowFailed] = useState(false);
   const [showRescreen, setShowRescreen] = useState(false);
   const [gradeFilter, setGradeFilter] = useState('all');
-  const [teacherFilter, setTeacherFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('name'); // name, grade, teacher, date, status
+  const [sortBy, setSortBy] = useState('name'); // name, grade, date, status
   const [sortDir, setSortDir] = useState('asc');
   
   // Pagination
@@ -131,18 +130,17 @@ export default function DashboardNew() {
   
   const allStudents = data?.data || [];
   
-  // Get unique grades and teachers for filter dropdowns
-  const { grades, teachers } = useMemo(() => {
+  // Standard grade order
+  const GRADE_ORDER = ['Pre-K (3)', 'Pre-K (4)', 'Kindergarten', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
+  
+  // Get grades that exist in the current data, sorted properly
+  const grades = useMemo(() => {
     const gradeSet = new Set();
-    const teacherSet = new Set();
     allStudents.forEach(s => {
       if (s.grade) gradeSet.add(s.grade);
-      if (s.teacher) teacherSet.add(s.teacher);
     });
-    return {
-      grades: Array.from(gradeSet).sort(),
-      teachers: Array.from(teacherSet).sort()
-    };
+    // Sort by the defined order
+    return GRADE_ORDER.filter(g => gradeSet.has(g));
   }, [allStudents]);
   
   // Compute stats
@@ -205,11 +203,6 @@ export default function DashboardNew() {
       filtered = filtered.filter(s => s.grade === gradeFilter);
     }
     
-    // Filter by teacher
-    if (teacherFilter && teacherFilter !== 'all') {
-      filtered = filtered.filter(s => s.teacher === teacherFilter);
-    }
-    
     // Sort
     filtered.sort((a, b) => {
       let aVal, bVal;
@@ -221,15 +214,10 @@ export default function DashboardNew() {
           break;
         case 'grade':
           // Sort grades in logical order
-          const gradeOrder = ['Pre-K (3)', 'Pre-K (4)', 'Kindergarten', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
-          aVal = gradeOrder.indexOf(a.grade);
-          bVal = gradeOrder.indexOf(b.grade);
+          aVal = GRADE_ORDER.indexOf(a.grade);
+          bVal = GRADE_ORDER.indexOf(b.grade);
           if (aVal === -1) aVal = 999;
           if (bVal === -1) bVal = 999;
-          break;
-        case 'teacher':
-          aVal = (a.teacher || '').toLowerCase();
-          bVal = (b.teacher || '').toLowerCase();
           break;
         case 'date':
           aVal = a.initial_screening_date || '';
@@ -251,7 +239,7 @@ export default function DashboardNew() {
     });
     
     return filtered;
-  }, [allStudents, searchQuery, statusFilter, showFailed, showRescreen, gradeFilter, teacherFilter, sortBy, sortDir]);
+  }, [allStudents, searchQuery, statusFilter, showFailed, showRescreen, gradeFilter, sortBy, sortDir]);
   
   // Paginate
   const paginatedStudents = useMemo(() => {
@@ -302,10 +290,9 @@ export default function DashboardNew() {
     setShowRescreen(false);
     setSearchQuery('');
     setGradeFilter('all');
-    setTeacherFilter('all');
   };
   
-  const hasActiveFilters = statusFilter || showFailed || showRescreen || searchQuery || gradeFilter !== 'all' || teacherFilter !== 'all';
+  const hasActiveFilters = statusFilter || showFailed || showRescreen || searchQuery || gradeFilter !== 'all';
   
   return (
     <div className="min-h-screen bg-gray-50">
@@ -440,18 +427,6 @@ export default function DashboardNew() {
               ))}
             </select>
             
-            {/* Teacher Filter */}
-            <select
-              value={teacherFilter}
-              onChange={(e) => { setTeacherFilter(e.target.value); setCurrentPage(0); }}
-              className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 min-w-[160px]"
-            >
-              <option value="all">All Teachers</option>
-              {teachers.map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-            
             {/* Sort */}
             <div className="flex items-center gap-1">
               <select
@@ -461,7 +436,6 @@ export default function DashboardNew() {
               >
                 <option value="name">Sort: Name</option>
                 <option value="grade">Sort: Grade</option>
-                <option value="teacher">Sort: Teacher</option>
                 <option value="date">Sort: Date</option>
                 <option value="status">Sort: Status</option>
               </select>
