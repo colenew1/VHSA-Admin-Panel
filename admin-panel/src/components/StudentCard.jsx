@@ -114,45 +114,59 @@ function StatusBadge({ status, hasFailed, rescreenStatus, allInitialsDone }) {
   const hasPendingRescreens = rescreenStatus?.pending?.length > 0;
   const hadFailedTests = rescreenStatus?.needed?.length > 0;
   const allRescreensDone = hadFailedTests && rescreenStatus?.pending?.length === 0;
+  const allRescreensPassed = allRescreensDone && rescreenStatus?.rescreenFailed?.length === 0;
   
-  // Simplified badge logic:
-  // 1. "Incomplete" - initial screenings not done
-  // 2. "Needs Rescreen" - all initials done, some failed, rescreens pending
-  // 3. "Complete" - all done (show "Rescreened" tag if went through rescreen)
+  // Badge logic:
+  // 1. Primary: Incomplete / Complete / Not Started / Absent
+  // 2. Secondary: "FAILED" if any test failed (and not all rescreens passed)
+  // 3. Tertiary: "Needs Rescreen" if rescreens pending, OR "Rescreened" if done
   
   let primaryBadge = null;
-  let secondaryBadge = null;
   
   if (status === 'not_started') {
     primaryBadge = { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Not Started' };
   } else if (status === 'absent') {
     primaryBadge = { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300', label: 'Absent' };
-  } else if (allInitialsDone && hasPendingRescreens) {
-    // All initials done but needs rescreen - show ONLY "Needs Rescreen"
-    primaryBadge = { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-300', label: 'Needs Rescreen' };
   } else if (status === 'incomplete') {
-    // Still doing initial screenings
     primaryBadge = { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300', label: 'Incomplete' };
   } else if (status === 'completed') {
     primaryBadge = { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300', label: 'Complete' };
-    // Add "Rescreened" tag if they went through rescreen process
-    if (allRescreensDone) {
-      secondaryBadge = { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300', label: 'Rescreened' };
-    }
   }
   
   if (!primaryBadge) {
     primaryBadge = { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Unknown' };
   }
   
+  // Show FAILED if any test failed and rescreens haven't all passed
+  const showFailed = hasFailed && !allRescreensPassed;
+  
+  // Show Needs Rescreen if there are pending rescreens
+  const showNeedsRescreen = hasPendingRescreens;
+  
+  // Show Rescreened if all rescreens are done
+  const showRescreened = allRescreensDone;
+  
   return (
     <div className="flex items-center gap-2 flex-wrap">
       <span className={`px-2.5 py-1 rounded-full text-sm font-medium ${primaryBadge.bg} ${primaryBadge.text} border ${primaryBadge.border}`}>
         {primaryBadge.label}
       </span>
-      {secondaryBadge && (
-        <span className={`px-2.5 py-1 rounded-full text-sm font-medium ${secondaryBadge.bg} ${secondaryBadge.text} border ${secondaryBadge.border}`}>
-          {secondaryBadge.label}
+      
+      {showFailed && (
+        <span className="px-2.5 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700 border border-red-300">
+          FAILED
+        </span>
+      )}
+      
+      {showNeedsRescreen && (
+        <span className="px-2.5 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700 border border-purple-300">
+          Needs Rescreen
+        </span>
+      )}
+      
+      {showRescreened && (
+        <span className="px-2.5 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-700 border border-blue-300">
+          Rescreened
         </span>
       )}
     </div>
