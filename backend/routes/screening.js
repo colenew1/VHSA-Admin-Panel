@@ -547,10 +547,10 @@ router.put('/:unique_id', async (req, res, next) => {
         // Create new screening record - need to get student_id first
         console.log('Creating new screening record...');
         
-        // Look up the student's internal ID
+        // Look up the student's internal ID and school
         const { data: studentRecord, error: studentLookupError } = await supabase
           .from('students')
-          .select('id')
+          .select('id, school')
           .eq('unique_id', unique_id)
           .single();
         
@@ -559,9 +559,12 @@ router.put('/:unique_id', async (req, res, next) => {
           throw new Error(`Student not found with unique_id: ${unique_id}`);
         }
         
+        // Auto-set required fields for new screening record
         const insertData = { 
           student_id: studentRecord.id,
-          unique_id, 
+          unique_id,
+          school: studentRecord.school, // Include school from student record
+          initial_screening_date: filteredData.initial_screening_date || new Date().toISOString().split('T')[0],
           ...filteredData 
         };
         console.log('Insert data:', JSON.stringify(insertData, null, 2));
