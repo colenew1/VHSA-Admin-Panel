@@ -329,10 +329,12 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
   // All rescreens passed
   const allRescreensPassed = allRescreensDone && rescreenStatus.rescreenFailed.length === 0;
   
-  // Card should be purple if complete but has pending rescreens
-  const needsRescreenHighlight = status === 'completed' && hasPendingRescreens;
-  // Or if screenings are done but rescreens pending
-  const isRescreenPending = hasFailed && hasPendingRescreens;
+  // Check if all initial screenings are complete (no remaining tests)
+  const allInitialScreeningsDone = remainingTests.length === 0 && status !== 'not_started';
+  
+  // PURPLE = All initial screenings done + some failed + rescreens still pending
+  // Only show purple when COMPLETE with initial screenings but needs rescreens
+  const isRescreenPending = allInitialScreeningsDone && hasFailed && hasPendingRescreens;
   
   const borderColors = {
     not_started: 'border-gray-200 hover:border-gray-400',
