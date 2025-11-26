@@ -480,23 +480,41 @@ router.put('/:unique_id', async (req, res, next) => {
       }
     }
 
-    // Update screening_results table if there are screening data fields to update
+    // Update or create screening_results record
     let screeningData = null;
     if (Object.keys(filteredData).length > 0) {
-      const { data, error } = await supabase
+      // First check if screening record exists
+      const { data: existingRecord } = await supabase
         .from('screening_results')
-        .update(filteredData)
+        .select('id')
         .eq('unique_id', unique_id)
-        .select()
         .single();
 
-      if (error) throw error;
+      if (existingRecord) {
+        // Update existing record
+        const { data, error } = await supabase
+          .from('screening_results')
+          .update(filteredData)
+          .eq('unique_id', unique_id)
+          .select()
+          .single();
 
-      if (!data) {
-        return res.status(404).json({ error: 'Screening record not found' });
+        if (error) throw error;
+        screeningData = data;
+      } else {
+        // Create new screening record with the unique_id
+        const { data, error } = await supabase
+          .from('screening_results')
+          .insert({ unique_id, ...filteredData })
+          .select()
+          .single();
+
+        if (error) {
+          console.error('Error creating screening record:', error);
+          throw error;
+        }
+        screeningData = data;
       }
-
-      screeningData = data;
     }
 
     // If no updates were made, return error
