@@ -94,8 +94,7 @@ function StatusBadge({ status, hasFailed, rescreenStatus }) {
   
   // Determine rescreen badge
   const hasRescreenNeeded = rescreenStatus?.pending?.length > 0;
-  const hasRescreenPassed = rescreenStatus?.rescreenPassed?.length > 0 && rescreenStatus?.rescreenFailed?.length === 0 && rescreenStatus?.pending?.length === 0;
-  const hasRescreenFailed = rescreenStatus?.rescreenFailed?.length > 0;
+  const hasRescreened = rescreenStatus?.completed?.length > 0; // Rescreen was done (passed or failed)
   
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
@@ -104,26 +103,21 @@ function StatusBadge({ status, hasFailed, rescreenStatus }) {
       </span>
       
       {/* Show FAILED if any initial test failed and no rescreen done yet */}
-      {hasFailed && !hasRescreenPassed && !hasRescreenFailed && (
+      {hasFailed && !hasRescreened && (
         <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">
           FAILED
         </span>
       )}
       
-      {/* Rescreen status badges */}
-      {hasRescreenNeeded && (
+      {/* Rescreen status badges - mutually exclusive: either needs rescreen OR was rescreened */}
+      {hasRescreenNeeded && !hasRescreened && (
         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 border border-purple-300">
           Rescreen Needed
         </span>
       )}
-      {hasRescreenPassed && (
-        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-300">
-          Rescreen Passed
-        </span>
-      )}
-      {hasRescreenFailed && (
-        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">
-          Rescreen Failed
+      {hasRescreened && (
+        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-300">
+          Rescreened
         </span>
       )}
     </div>
@@ -408,37 +402,22 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
         </div>
       )}
       
-      {/* Rescreen Status */}
-      {rescreenStatus.needed.length > 0 && (
-        <div className="mt-2 space-y-1">
-          {/* Rescreen Needed (pending) */}
-          {rescreenStatus.pending.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap">
-              <span className="text-xs text-purple-600 font-medium">Rescreen Needed:</span>
-              {rescreenStatus.pending.map(test => (
-                <span key={test} className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium">
-                  {test}
-                </span>
-              ))}
-            </div>
-          )}
-          
-          {/* Rescreen Completed - show if passed or failed */}
-          {rescreenStatus.completed.length > 0 && (
-            <div className="flex items-center gap-1 flex-wrap">
-              <span className="text-xs text-purple-600 font-medium">Rescreen Done:</span>
-              {rescreenStatus.rescreenPassed.map(test => (
-                <span key={test} className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
-                  {test} ✓
-                </span>
-              ))}
-              {rescreenStatus.rescreenFailed.map(test => (
-                <span key={test} className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-xs font-medium">
-                  {test} ✗
-                </span>
-              ))}
-            </div>
-          )}
+      {/* Rescreen Status - only show when there's rescreen activity */}
+      {rescreenStatus.completed.length > 0 && (
+        <div className="mt-2">
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-xs text-blue-600 font-medium">Rescreened:</span>
+            {rescreenStatus.rescreenPassed.map(test => (
+              <span key={test} className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
+                {test} ✓
+              </span>
+            ))}
+            {rescreenStatus.rescreenFailed.map(test => (
+              <span key={test} className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-xs font-medium">
+                {test} ✗
+              </span>
+            ))}
+          </div>
         </div>
       )}
     </div>
