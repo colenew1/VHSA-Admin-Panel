@@ -1,20 +1,33 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getSchools, getScreeningData } from '../api/client';
-import { getRowStatus, hasFailedTest, formatDate } from '../utils/statusHelpers';
+import { getRowStatus, formatDate } from '../utils/statusHelpers';
 import { useToast } from '../components/Toast';
 
-// Grade order for sorting
-const GRADE_ORDER = ['Pre-K (3)', 'Pre-K (4)', 'Kindergarten', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', '11th', '12th'];
+// All possible grades in order
+const ALL_GRADES = [
+  'Pre-K (3)', 'Pre-K (4)', 'Kindergarten', 
+  '1st', '2nd', '3rd', '4th', '5th', 
+  '6th', '7th', '8th', 
+  '9th', '10th', '11th', '12th'
+];
+
+// Grade presets for quick selection
+const GRADE_PRESETS = {
+  'all': { label: 'All Grades', grades: ALL_GRADES },
+  'elementary': { label: 'Elementary (Pre-K - 5th)', grades: ['Pre-K (3)', 'Pre-K (4)', 'Kindergarten', '1st', '2nd', '3rd', '4th', '5th'] },
+  'middle': { label: 'Middle School (6th - 8th)', grades: ['6th', '7th', '8th'] },
+  'high': { label: 'High School (9th - 12th)', grades: ['9th', '10th', '11th', '12th'] },
+  'k-5': { label: 'K-5 Only', grades: ['Kindergarten', '1st', '2nd', '3rd', '4th', '5th'] },
+  'k-8': { label: 'K-8', grades: ['Kindergarten', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'] },
+};
 
 // Calculate what tests a student needs based on grade/status/gender
 function getTestsNeeded(student) {
   const { grade, status, gender } = student;
-  const tests = [];
   const isNew = status === 'New';
   
-  // V = Vision, H = Hearing, A = Acanthosis, S = Scoliosis
-  if (grade === 'Pre-K (3)') return ''; // No tests required
+  if (grade === 'Pre-K (3)') return '';
   if (grade === 'Pre-K (4)') return 'V H';
   if (grade === 'Kindergarten') return 'V H';
   if (grade === '1st') return 'V H A';
@@ -30,14 +43,6 @@ function getTestsNeeded(student) {
   return '';
 }
 
-// Check if a test value indicates "Pass"
-function isPass(value) {
-  if (!value) return false;
-  const v = String(value).toUpperCase().trim();
-  return v === 'P' || v === 'PASS' || (v.startsWith('20/') && parseInt(v.split('/')[1]) <= 30);
-}
-
-// Check if a test value indicates "Fail"
 function isFail(value) {
   if (!value) return false;
   const v = String(value).toUpperCase().trim();
@@ -49,7 +54,12 @@ export default function Export() {
   const [activeTab, setActiveTab] = useState('cards');
   const [year, setYear] = useState(new Date().getFullYear().toString());
   const [school, setSchool] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all'); // all, not_started, incomplete, completed
+  const [statusFilter, setStatusFilter] = useState('all');
+  
+  // Report-specific state
+  const [reportNotes, setReportNotes] = useState('');
+  const [selectedGrades, setSelectedGrades] = useState([...ALL_GRADES]);
+  const [gradePreset, setGradePreset] = useState('all');
   
   // Fetch schools
   const { data: schoolsData } = useQuery({
@@ -81,28 +91,37 @@ export default function Export() {
     return allStudents.filter(s => getRowStatus(s) === statusFilter);
   }, [allStudents, statusFilter]);
   
-  // Calculate reporting statistics
+  // Calculate reporting statistics - includes ALL selected grades even if empty
   const reportStats = useMemo(() => {
+    // Initialize stats for ALL selected grades
     const stats = {
       total: 0,
       byGrade: {}
     };
     
+    // Pre-populate all selected grades with zeros
+    selectedGrades.forEach(grade => {
+      stats.byGrade[grade] = {
+        grade,
+        total: 0,
+        vision: { screened: 0, passed: 0, failed: 0 },
+        hearing: { screened: 0, passed: 0, failed: 0 },
+        acanthosis: { screened: 0, passed: 0, failed: 0 },
+        scoliosis: { screened: 0, passed: 0, failed: 0 },
+        glasses: 0,
+      };
+    });
+    
+    // Fill in actual data
     allStudents.forEach(student => {
       const grade = student.grade || 'Unknown';
-      if (!stats.byGrade[grade]) {
-        stats.byGrade[grade] = {
-          grade,
-          total: 0,
-          vision: { screened: 0, passed: 0, failed: 0 },
-          hearing: { screened: 0, passed: 0, failed: 0 },
-          acanthosis: { screened: 0, passed: 0, failed: 0 },
-          scoliosis: { screened: 0, passed: 0, failed: 0 },
-          glasses: 0,
-        };
-      }
+      
+      // Skip if grade not in selected grades
+      if (!selectedGrades.includes(grade)) return;
       
       const g = stats.byGrade[grade];
+      if (!g) return;
+      
       g.total++;
       stats.total++;
       
@@ -111,7 +130,7 @@ export default function Export() {
         g.vision.screened++;
         if (isFail(student.vision_overall) || isFail(student.vision_initial_right) || isFail(student.vision_initial_left)) {
           g.vision.failed++;
-        } else if (isPass(student.vision_overall) || student.vision_initial_right || student.vision_initial_left) {
+        } else {
           g.vision.passed++;
         }
       }
@@ -156,15 +175,27 @@ export default function Export() {
       }
     });
     
-    // Sort by grade order
-    const sortedGrades = Object.values(stats.byGrade).sort((a, b) => {
-      const aIdx = GRADE_ORDER.indexOf(a.grade);
-      const bIdx = GRADE_ORDER.indexOf(b.grade);
-      return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx);
-    });
+    // Sort by grade order and convert to array
+    const sortedGrades = selectedGrades.map(grade => stats.byGrade[grade]).filter(Boolean);
     
     return { ...stats, byGrade: sortedGrades };
-  }, [allStudents]);
+  }, [allStudents, selectedGrades]);
+  
+  // Handle grade preset change
+  const handlePresetChange = (preset) => {
+    setGradePreset(preset);
+    setSelectedGrades([...GRADE_PRESETS[preset].grades]);
+  };
+  
+  // Toggle individual grade
+  const toggleGrade = (grade) => {
+    setGradePreset('custom');
+    setSelectedGrades(prev => 
+      prev.includes(grade) 
+        ? prev.filter(g => g !== grade)
+        : [...prev, grade].sort((a, b) => ALL_GRADES.indexOf(a) - ALL_GRADES.indexOf(b))
+    );
+  };
   
   // Generate student cards PDF (8 per page)
   const generateCardsPDF = () => {
@@ -173,8 +204,7 @@ export default function Export() {
       return;
     }
     
-    // Create printable HTML
-    const cardsHTML = filteredStudents.map((student, idx) => {
+    const cardsHTML = filteredStudents.map((student) => {
       const tests = getTestsNeeded(student);
       return `
         <div class="card">
@@ -262,15 +292,34 @@ export default function Export() {
       </head>
       <body>
         ${(() => {
-          // Group cards into pages of 8
           const pages = [];
           for (let i = 0; i < filteredStudents.length; i += 8) {
-            const pageCards = cardsHTML.split('</div>\n        <div class="card">').slice(i, i + 8);
-            if (i === 0) {
-              pages.push(`<div class="cards-container">${pageCards.join('</div><div class="card">')}</div>`);
-            } else {
-              pages.push(`<div class="cards-container"><div class="card">${pageCards.join('</div><div class="card">')}</div>`);
-            }
+            const pageStudents = filteredStudents.slice(i, i + 8);
+            const pageCardsHTML = pageStudents.map(student => {
+              const tests = getTestsNeeded(student);
+              return `
+                <div class="card">
+                  <div class="card-header">
+                    <span class="student-id">${student.unique_id || 'N/A'}</span>
+                    <span class="grade">${student.grade || ''}</span>
+                  </div>
+                  <div class="student-name">${student.last_name}, ${student.first_name}</div>
+                  <div class="teacher">Teacher: ${student.teacher || '—'}</div>
+                  <div class="tests-section">
+                    <div class="tests-label">Tests Needed:</div>
+                    <div class="tests-boxes">
+                      ${tests.includes('V') ? '<div class="test-box">V<br><small>Vision</small></div>' : ''}
+                      ${tests.includes('H') ? '<div class="test-box">H<br><small>Hearing</small></div>' : ''}
+                      ${tests.includes('A') ? '<div class="test-box">A<br><small>AN</small></div>' : ''}
+                      ${tests.includes('S') ? '<div class="test-box">S<br><small>Spine</small></div>' : ''}
+                      ${!tests ? '<div class="no-tests">No tests required</div>' : ''}
+                    </div>
+                  </div>
+                  <div class="footer">VHSA Health Screening ${year}</div>
+                </div>
+              `;
+            }).join('');
+            pages.push(`<div class="cards-container">${pageCardsHTML}</div>`);
           }
           return pages.join('');
         })()}
@@ -283,7 +332,7 @@ export default function Export() {
   
   // Export students as CSV
   const exportStudentsCSV = () => {
-    if (filteredStudents.length === 0) {
+    if (allStudents.length === 0) {
       toast.warning('No students to export');
       return;
     }
@@ -296,7 +345,7 @@ export default function Export() {
       'Acanthosis', 'Scoliosis', 'Notes'
     ];
     
-    const rows = filteredStudents.map(s => [
+    const rows = allStudents.map(s => [
       s.unique_id || '',
       s.first_name || '',
       s.last_name || '',
@@ -337,36 +386,49 @@ export default function Export() {
   
   // Generate report PDF
   const generateReportPDF = () => {
-    if (reportStats.total === 0) {
+    if (reportStats.total === 0 && !reportNotes.trim()) {
       toast.warning('No data to generate report');
       return;
     }
+    
+    const schoolName = school === 'all' ? 'All Schools' : school;
     
     const printWindow = window.open('', '_blank');
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Screening Report - ${school === 'all' ? 'All Schools' : school}</title>
+        <title>Screening Report - ${schoolName}</title>
         <style>
           @page { size: letter; margin: 0.75in; }
-          body { font-family: Arial, sans-serif; font-size: 12px; }
-          h1 { font-size: 20px; margin-bottom: 5px; }
-          .meta { color: #666; margin-bottom: 20px; }
+          body { font-family: Arial, sans-serif; font-size: 11px; }
+          h1 { font-size: 18px; margin-bottom: 5px; }
+          .meta { color: #666; margin-bottom: 15px; font-size: 10px; }
           table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th, td { border: 1px solid #333; padding: 6px 8px; text-align: center; }
-          th { background: #f0f0f0; font-weight: bold; }
+          th, td { border: 1px solid #333; padding: 4px 6px; text-align: center; }
+          th { background: #f0f0f0; font-weight: bold; font-size: 10px; }
           .grade-col { text-align: left; font-weight: bold; }
           .total-row { background: #e8f4ff; font-weight: bold; }
           .section-header { background: #333; color: white; }
-          .sub-header { background: #f5f5f5; font-size: 10px; }
+          .sub-header { background: #f5f5f5; font-size: 9px; }
+          .notes-section { margin-top: 20px; page-break-inside: avoid; }
+          .notes-title { font-weight: bold; font-size: 12px; margin-bottom: 5px; }
+          .notes-content { 
+            border: 1px solid #ccc; 
+            padding: 10px; 
+            min-height: 100px; 
+            white-space: pre-wrap;
+            font-size: 10px;
+            background: #fafafa;
+          }
+          .empty-row { color: #999; }
         </style>
       </head>
       <body>
         <h1>Vision, Hearing, Spinal & Acanthosis Screening Report</h1>
         <div class="meta">
-          <strong>School:</strong> ${school === 'all' ? 'All Schools' : school}<br>
-          <strong>Year:</strong> ${year}<br>
+          <strong>School:</strong> ${schoolName} &nbsp;|&nbsp;
+          <strong>Year:</strong> ${year} &nbsp;|&nbsp;
           <strong>Generated:</strong> ${new Date().toLocaleDateString()}
         </div>
         
@@ -397,35 +459,42 @@ export default function Export() {
           </thead>
           <tbody>
             ${reportStats.byGrade.map(g => `
-              <tr>
+              <tr class="${g.total === 0 ? 'empty-row' : ''}">
                 <td class="grade-col">${g.grade}</td>
                 <td>${g.total}</td>
                 <td>${g.vision.screened}</td>
-                <td>${g.vision.failed}</td>
+                <td>${g.vision.failed || ''}</td>
                 <td>${g.glasses}</td>
                 <td>${g.hearing.screened}</td>
-                <td>${g.hearing.failed}</td>
+                <td>${g.hearing.failed || ''}</td>
                 <td>${g.acanthosis.screened}</td>
-                <td>${g.acanthosis.failed}</td>
+                <td>${g.acanthosis.failed || ''}</td>
                 <td>${g.scoliosis.screened}</td>
-                <td>${g.scoliosis.failed}</td>
+                <td>${g.scoliosis.failed || ''}</td>
               </tr>
             `).join('')}
             <tr class="total-row">
               <td class="grade-col">TOTAL</td>
               <td>${reportStats.total}</td>
-              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.vision.screened, 0)}</td>
-              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.vision.failed, 0)}</td>
-              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.glasses, 0)}</td>
-              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.hearing.screened, 0)}</td>
-              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.hearing.failed, 0)}</td>
-              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.acanthosis.screened, 0)}</td>
-              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.acanthosis.failed, 0)}</td>
-              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.scoliosis.screened, 0)}</td>
-              <td>${reportStats.byGrade.reduce((sum, g) => sum + g.scoliosis.failed, 0)}</td>
+              <td>${reportStats.byGrade.reduce((s, g) => s + g.vision.screened, 0)}</td>
+              <td>${reportStats.byGrade.reduce((s, g) => s + g.vision.failed, 0)}</td>
+              <td>${reportStats.byGrade.reduce((s, g) => s + g.glasses, 0)}</td>
+              <td>${reportStats.byGrade.reduce((s, g) => s + g.hearing.screened, 0)}</td>
+              <td>${reportStats.byGrade.reduce((s, g) => s + g.hearing.failed, 0)}</td>
+              <td>${reportStats.byGrade.reduce((s, g) => s + g.acanthosis.screened, 0)}</td>
+              <td>${reportStats.byGrade.reduce((s, g) => s + g.acanthosis.failed, 0)}</td>
+              <td>${reportStats.byGrade.reduce((s, g) => s + g.scoliosis.screened, 0)}</td>
+              <td>${reportStats.byGrade.reduce((s, g) => s + g.scoliosis.failed, 0)}</td>
             </tr>
           </tbody>
         </table>
+        
+        ${reportNotes.trim() ? `
+          <div class="notes-section">
+            <div class="notes-title">Notes:</div>
+            <div class="notes-content">${reportNotes.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</div>
+          </div>
+        ` : ''}
         
         <script>window.onload = () => window.print();</script>
       </body>
@@ -483,9 +552,7 @@ export default function Export() {
               Refresh
             </button>
           </div>
-          {isLoading && (
-            <p className="text-sm text-gray-500 mt-2">Loading data...</p>
-          )}
+          {isLoading && <p className="text-sm text-gray-500 mt-2">Loading data...</p>}
           {!isLoading && allStudents.length > 0 && (
             <p className="text-sm text-gray-500 mt-2">
               <span className="font-medium text-gray-900">{allStudents.length}</span> students loaded
@@ -528,7 +595,6 @@ export default function Export() {
               <h2 className="text-lg font-semibold text-gray-900 mb-2">Student Cards</h2>
               <p className="text-sm text-gray-600 mb-4">
                 Print cards for students to carry during screening. <strong>8 cards per page</strong> - designed to be cut with a paper cutter.
-                Each card shows the student's name, ID, grade, and which tests they need.
               </p>
               
               {/* Status Filter */}
@@ -616,12 +682,12 @@ export default function Export() {
                 <div>
                   <h2 className="text-lg font-semibold text-gray-900">School Screening Report</h2>
                   <p className="text-sm text-gray-600">
-                    Summary statistics by grade showing screened counts and failures
+                    Summary statistics by grade with notes
                   </p>
                 </div>
                 <button
                   onClick={generateReportPDF}
-                  disabled={reportStats.total === 0 || isLoading}
+                  disabled={isLoading}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -631,10 +697,59 @@ export default function Export() {
                 </button>
               </div>
               
-              {reportStats.total === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <div className="text-4xl mb-2">📊</div>
-                  <p>No data available. Select a school and year above.</p>
+              {/* Grade Selection */}
+              <div className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <label className="text-sm font-medium text-gray-700 block mb-2">Select Grades to Include</label>
+                
+                {/* Preset Buttons */}
+                <div className="flex flex-wrap gap-2 mb-3">
+                  {Object.entries(GRADE_PRESETS).map(([key, preset]) => (
+                    <button
+                      key={key}
+                      onClick={() => handlePresetChange(key)}
+                      className={`px-3 py-1 rounded text-xs font-medium transition-all ${
+                        gradePreset === key
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                  {gradePreset === 'custom' && (
+                    <span className="px-3 py-1 rounded text-xs font-medium bg-purple-100 text-purple-700">
+                      Custom Selection
+                    </span>
+                  )}
+                </div>
+                
+                {/* Individual Grade Checkboxes */}
+                <div className="flex flex-wrap gap-2">
+                  {ALL_GRADES.map(grade => (
+                    <label
+                      key={grade}
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs cursor-pointer transition-all ${
+                        selectedGrades.includes(grade)
+                          ? 'bg-blue-100 text-blue-700'
+                          : 'bg-gray-100 text-gray-500'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedGrades.includes(grade)}
+                        onChange={() => toggleGrade(grade)}
+                        className="w-3 h-3"
+                      />
+                      {grade}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Report Table */}
+              {selectedGrades.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  Select at least one grade to show the report
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -665,18 +780,18 @@ export default function Export() {
                     </thead>
                     <tbody>
                       {reportStats.byGrade.map((g, idx) => (
-                        <tr key={g.grade} className={idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                        <tr key={g.grade} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-gray-50'} ${g.total === 0 ? 'text-gray-400' : ''}`}>
                           <td className="px-3 py-2 font-medium">{g.grade}</td>
-                          <td className="px-3 py-2 text-center">{g.total}</td>
-                          <td className="px-3 py-2 text-center">{g.vision.screened}</td>
-                          <td className={`px-3 py-2 text-center ${g.vision.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.vision.failed}</td>
-                          <td className="px-3 py-2 text-center">{g.glasses}</td>
-                          <td className="px-3 py-2 text-center">{g.hearing.screened}</td>
-                          <td className={`px-3 py-2 text-center ${g.hearing.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.hearing.failed}</td>
-                          <td className="px-3 py-2 text-center">{g.acanthosis.screened}</td>
-                          <td className={`px-3 py-2 text-center ${g.acanthosis.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.acanthosis.failed}</td>
-                          <td className="px-3 py-2 text-center">{g.scoliosis.screened}</td>
-                          <td className={`px-3 py-2 text-center ${g.scoliosis.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.scoliosis.failed}</td>
+                          <td className="px-3 py-2 text-center">{g.total || '—'}</td>
+                          <td className="px-3 py-2 text-center">{g.vision.screened || '—'}</td>
+                          <td className={`px-3 py-2 text-center ${g.vision.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.vision.failed || '—'}</td>
+                          <td className="px-3 py-2 text-center">{g.glasses || '—'}</td>
+                          <td className="px-3 py-2 text-center">{g.hearing.screened || '—'}</td>
+                          <td className={`px-3 py-2 text-center ${g.hearing.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.hearing.failed || '—'}</td>
+                          <td className="px-3 py-2 text-center">{g.acanthosis.screened || '—'}</td>
+                          <td className={`px-3 py-2 text-center ${g.acanthosis.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.acanthosis.failed || '—'}</td>
+                          <td className="px-3 py-2 text-center">{g.scoliosis.screened || '—'}</td>
+                          <td className={`px-3 py-2 text-center ${g.scoliosis.failed > 0 ? 'text-red-600 font-bold' : ''}`}>{g.scoliosis.failed || '—'}</td>
                         </tr>
                       ))}
                       <tr className="bg-blue-50 font-bold border-t-2 border-blue-200">
@@ -696,6 +811,22 @@ export default function Export() {
                   </table>
                 </div>
               )}
+              
+              {/* Notes Section */}
+              <div className="mt-6">
+                <label className="text-sm font-medium text-gray-700 block mb-2">
+                  Notes (will be included in printed report)
+                </label>
+                <textarea
+                  value={reportNotes}
+                  onChange={(e) => setReportNotes(e.target.value)}
+                  placeholder="Add any notes here... (e.g., 'John Smith - has back brace, skip scoliosis screening')"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm h-32 resize-y"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Use this section for special circumstances, equipment notes, absent students, etc.
+                </p>
+              </div>
             </div>
           </div>
         )}
@@ -744,7 +875,6 @@ export default function Export() {
                     ))}
                   </div>
                   
-                  {/* Preview */}
                   <div className="mt-6">
                     <h3 className="text-sm font-medium text-gray-700 mb-3">Preview (first 5 students)</h3>
                     <div className="overflow-x-auto border border-gray-200 rounded-lg">

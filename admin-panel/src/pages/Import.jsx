@@ -802,9 +802,10 @@ export default function Import() {
             setMissingSchools([]);
           }
         }}
-        confirmText={isImporting ? 'Importing...' : 'Import'}
-        confirmButtonClass="bg-green-600 hover:bg-green-700"
-        isLoading={isImporting || missingSchools.length > 0}
+        confirmText={missingSchools.length > 0 ? 'Cannot Import' : (isImporting ? 'Importing...' : 'Import')}
+        confirmButtonClass={missingSchools.length > 0 ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'}
+        isLoading={isImporting}
+        confirmDisabled={missingSchools.length > 0}
       />
     </div>
   );
