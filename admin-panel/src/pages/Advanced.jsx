@@ -2,6 +2,8 @@ import { useState, useRef, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSchools, createSchool, updateSchool, getScreeners, createScreener, updateScreener, deleteScreener, getAdminUsers, createAdminUser, updateAdminUser, deleteAdminUser } from '../api/client';
 import api from '../api/client';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { useToast } from '../components/Toast';
 
 /**
  * Advanced Settings Page - Master List Manager
@@ -21,6 +23,7 @@ import api from '../api/client';
  */
 export default function Advanced() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState('schools');
   const [editingId, setEditingId] = useState(null);
   const [editingType, setEditingType] = useState(null); // 'schools', 'screeners', or 'emails'
@@ -273,7 +276,7 @@ export default function Advanced() {
     onError: (error) => {
       console.error('Error updating school:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to update school';
-      alert(`Error updating school: ${errorMessage}`);
+      toast.error(`Error updating school: ${errorMessage}`);
     },
   });
 
@@ -291,7 +294,7 @@ export default function Advanced() {
     onError: (error) => {
       console.error('Error updating screener:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to update screener';
-      alert(`Error updating screener: ${errorMessage}`);
+      toast.error(`Error updating screener: ${errorMessage}`);
     },
   });
 
@@ -308,7 +311,7 @@ export default function Advanced() {
     onError: (error) => {
       console.error('Error updating admin user:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to update admin user';
-      alert(`Error updating admin user: ${errorMessage}`);
+      toast.error(`Error updating admin user: ${errorMessage}`);
     },
   });
 
@@ -323,7 +326,7 @@ export default function Advanced() {
     onError: (error) => {
       console.error('Error deleting screener:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to delete screener';
-      alert(`Error deleting screener: ${errorMessage}`);
+      toast.error(`Error deleting screener: ${errorMessage}`);
     },
   });
 
@@ -338,7 +341,7 @@ export default function Advanced() {
     onError: (error) => {
       console.error('Error deleting admin user:', error);
       const errorMessage = error.response?.data?.error || error.message || 'Failed to delete admin user';
-      alert(`Error deleting admin user: ${errorMessage}`);
+      toast.error(`Error deleting admin user: ${errorMessage}`);
     },
   });
 
@@ -407,7 +410,7 @@ export default function Advanced() {
     
     if (!item) {
       console.error('Item not found for save:', id, type);
-      alert('Item not found. Please refresh the page.');
+      toast.error('Item not found. Please refresh the page.');
       return;
     }
 
@@ -457,7 +460,7 @@ export default function Advanced() {
   // Handle add new item
   const handleAddItem = () => {
     if (!newItem.name.trim()) {
-      alert('Name is required');
+      toast.warning('Name is required');
       return;
     }
 
@@ -869,64 +872,31 @@ export default function Advanced() {
       </div>
 
       {/* Confirmation Dialog */}
-      {showConfirmDialog && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-          onClick={(e) => {
-            // Close dialog if clicking backdrop
-            if (e.target === e.currentTarget) {
-              setShowConfirmDialog(false);
-              setConfirmAction(null);
-              setConfirmMessage('');
+      <ConfirmDialog
+        isOpen={showConfirmDialog}
+        title="Confirm Action"
+        message={confirmMessage}
+        onConfirm={() => {
+          if (confirmAction && !confirmExecutedRef.current) {
+            confirmExecutedRef.current = true;
+            try {
+              confirmAction();
+              setTimeout(() => {
+                confirmExecutedRef.current = false;
+              }, 1000);
+            } catch (error) {
+              console.error('Error executing confirm action:', error);
+                      toast.error('An error occurred. Please try again.');
+              confirmExecutedRef.current = false;
             }
-          }}
-        >
-          <div 
-            className="bg-white rounded-lg p-6 max-w-md w-full mx-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Action</h3>
-            <p className="text-gray-700 mb-6">
-              {confirmMessage}
-            </p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowConfirmDialog(false);
-                  setConfirmAction(null);
-                  setConfirmMessage('');
-                }}
-                className="px-4 py-2 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (confirmAction && !confirmExecutedRef.current) {
-                    confirmExecutedRef.current = true;
-                    try {
-                      confirmAction();
-                      // Reset after a short delay to allow for React StrictMode double renders
-                      setTimeout(() => {
-                        confirmExecutedRef.current = false;
-                      }, 1000);
-                    } catch (error) {
-                      console.error('Error executing confirm action:', error);
-                      alert('An error occurred. Please try again.');
-                      confirmExecutedRef.current = false;
-                    }
-                  }
-                }}
-                className="px-4 py-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          }
+        }}
+        onCancel={() => {
+          setShowConfirmDialog(false);
+          setConfirmAction(null);
+          setConfirmMessage('');
+        }}
+      />
     </div>
   );
 }

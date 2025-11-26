@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSchools, exportStickers, getStickerPreview, getReportingData, updateReportingData, exportReportingPDF, searchStudentsForExport, exportStudentsCSV } from '../api/client';
 import EditableCell from '../components/EditableCell';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { useToast } from '../components/Toast';
 
 export default function Export() {
+  const toast = useToast();
   const [activeTab, setActiveTab] = useState('sticker');
   
   // Year filter (shared across both tabs)
@@ -102,12 +105,12 @@ export default function Export() {
   const updateReportingMutation = useMutation({
     mutationFn: updateReportingData,
     onSuccess: () => {
-      alert('Reporting data saved successfully!');
+      toast.success('Reporting data saved successfully!');
       setIsEditingReport(false);
       setShowSaveConfirm(false);
     },
     onError: (error) => {
-      alert(`Error saving reporting data: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error saving: ${error.response?.data?.error || error.message}`);
       setShowSaveConfirm(false);
     },
   });
@@ -123,7 +126,7 @@ export default function Export() {
   // Handle preview generation
   const handlePreviewStickers = async () => {
     if (!selectedSchool) {
-      alert('Please select a school');
+      toast.warning('Please select a school');
       return;
     }
     
@@ -133,7 +136,7 @@ export default function Export() {
       .map(([status, _]) => status);
     
     if (selectedStatuses.length === 0) {
-      alert('Please select at least one status filter');
+      toast.warning('Please select at least one status filter');
       return;
     }
     
@@ -146,7 +149,7 @@ export default function Export() {
       });
       setStickerPreview(data.stickers || []);
     } catch (error) {
-      alert(`Error generating preview: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error generating preview: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsLoadingPreview(false);
     }
@@ -167,12 +170,12 @@ export default function Export() {
   // Handle sticker export
   const handleExportStickers = async () => {
     if (!selectedSchool) {
-      alert('Please select a school');
+      toast.warning('Please select a school');
       return;
     }
     
     if (!stickerPreview || stickerPreview.length === 0) {
-      alert('Please generate a preview first');
+      toast.warning('Please generate a preview first');
       return;
     }
     
@@ -197,7 +200,7 @@ export default function Export() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert(`Error exporting stickers: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error exporting stickers: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsExporting(false);
     }
@@ -275,7 +278,7 @@ export default function Export() {
   // Handle export students as CSV
   const handleExportStudentsCSV = async () => {
     if (!studentExportResults || studentExportResults.count === 0) {
-      alert('Please search for students first');
+      toast.warning('Please search for students first');
       return;
     }
     
@@ -301,7 +304,7 @@ export default function Export() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert(`Error exporting CSV: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error exporting CSV: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsExportingStudents(false);
     }
@@ -311,7 +314,7 @@ export default function Export() {
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const handleExportReportingPDF = async () => {
     if (!reportData) {
-      alert('Please generate a report first');
+      toast.warning('Please generate a report first');
       return;
     }
     
@@ -336,7 +339,7 @@ export default function Export() {
       document.body.removeChild(a);
       window.URL.revokeObjectURL(url);
     } catch (error) {
-      alert(`Error exporting PDF: ${error.response?.data?.error || error.message}`);
+      toast.error(`Error exporting PDF: ${error.response?.data?.error || error.message}`);
     } finally {
       setIsExportingPDF(false);
     }
@@ -1191,29 +1194,16 @@ export default function Export() {
       )}
       
       {/* Save Confirmation Dialog */}
-      {showSaveConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Save</h3>
-            <p className="text-gray-700 mb-6">Are you sure you want to save these changes?</p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => setShowSaveConfirm(false)}
-                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmSave}
-                disabled={updateReportingMutation.isLoading}
-                className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
-              >
-                {updateReportingMutation.isLoading ? 'Saving...' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={showSaveConfirm}
+        title="Confirm Save"
+        message="Are you sure you want to save these changes?"
+        onConfirm={handleConfirmSave}
+        onCancel={() => setShowSaveConfirm(false)}
+        confirmText={updateReportingMutation.isLoading ? 'Saving...' : 'Save Changes'}
+        confirmButtonClass="bg-green-500 hover:bg-green-600"
+        isLoading={updateReportingMutation.isLoading}
+      />
     </div>
   );
 }

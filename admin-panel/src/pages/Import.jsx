@@ -2,26 +2,10 @@ import { useState, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getSchools, createStudent, getNextStudentId, createSchool } from '../api/client';
 import EditableCell from '../components/EditableCell';
+import ConfirmDialog from '../components/ConfirmDialog';
+import { useToast } from '../components/Toast';
 import { normalizeGrade, normalizeGender, normalizeStatus, normalizeDate, normalizeSchoolName } from '../utils/dataNormalization';
-
-// Grade options for dropdown - must match database format exactly
-const GRADE_OPTIONS = [
-  { value: 'Pre-K (3)', label: 'Pre-K (3)' },
-  { value: 'Pre-K (4)', label: 'Pre-K (4)' },
-  { value: 'Kindergarten', label: 'Kindergarten' },
-  { value: '1st', label: '1st' },
-  { value: '2nd', label: '2nd' },
-  { value: '3rd', label: '3rd' },
-  { value: '4th', label: '4th' },
-  { value: '5th', label: '5th' },
-  { value: '6th', label: '6th' },
-  { value: '7th', label: '7th' },
-  { value: '8th', label: '8th' },
-  { value: '9th', label: '9th' },
-  { value: '10th', label: '10th' },
-  { value: '11th', label: '11th' },
-  { value: '12th', label: '12th' },
-];
+import { GRADE_OPTIONS_NO_EMPTY } from '../constants/screeningOptions';
 
 // CSV column headers matching Add Student form (Student ID is auto-assigned, not in CSV)
 const CSV_HEADERS = [
@@ -37,6 +21,7 @@ const CSV_HEADERS = [
 
 export default function Import() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [csvData, setCsvData] = useState([]);
   const [editingRowIndex, setEditingRowIndex] = useState(null);
   const [showFirstConfirm, setShowFirstConfirm] = useState(false);
@@ -242,7 +227,7 @@ export default function Import() {
     if (!file) return;
     
     if (!file.name.endsWith('.csv')) {
-      alert('Please upload a CSV file');
+      toast.warning('Please upload a CSV file');
       return;
     }
 
@@ -256,7 +241,7 @@ export default function Import() {
       setCsvData(withIds);
       setEditingRowIndex(null);
     } catch (error) {
-      alert(`Error parsing CSV: ${error.message}`);
+      toast.error(`Error parsing CSV: ${error.message}`);
     }
   };
 
@@ -343,7 +328,7 @@ export default function Import() {
     
     if (missingSchoolsList.length > 0) {
       // Prevent import if schools are missing
-      alert('Import cancelled. All schools must be in the database before importing. Please add missing schools in the Advanced tab.');
+      toast.error('Import cancelled. All schools must be in the database first. Add missing schools in the Advanced tab.');
       setShowSecondConfirm(false);
       return;
     }
@@ -378,10 +363,10 @@ export default function Import() {
     setShowSecondConfirm(false);
     
     if (errorCount === 0) {
-      alert(`Successfully imported ${successCount} student(s)!`);
+      toast.success(`Successfully imported ${successCount} student(s)!`);
       setCsvData([]);
     } else {
-      alert(`Import completed with errors:\n\nSuccess: ${successCount}\nErrors: ${errorCount}\n\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n... and ${errors.length - 5} more` : ''}`);
+      toast.warning(`Imported ${successCount} of ${csvData.length} students. ${errorCount} errors occurred.`);
     }
   };
 
@@ -526,7 +511,7 @@ export default function Import() {
                         value={row.grade || ''}
                         onChange={(value) => handleCellChange(index, 'grade', value)}
                         type={editingRowIndex === index ? 'select' : 'text'}
-                        options={editingRowIndex === index ? GRADE_OPTIONS : []}
+                        options={editingRowIndex === index ? GRADE_OPTIONS_NO_EMPTY : []}
                         className="text-sm w-full"
                         disabled={editingRowIndex !== index}
                       />
@@ -612,89 +597,69 @@ export default function Import() {
       )}
 
       {/* First Confirmation Dialog */}
-      {showFirstConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Import</h3>
-            <p className="text-gray-700 mb-6">
+      <ConfirmDialog
+        isOpen={showFirstConfirm}
+        title="Confirm Import"
+        message={
+          <>
+            <p className="text-gray-700 mb-4">
               Do you want to import {csvData.length} student{csvData.length !== 1 ? 's' : ''}? 
               Please review all data before proceeding.
             </p>
             {missingSchools.length > 0 && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                 <p className="text-sm text-yellow-800 font-medium">
                   ⚠️ Warning: One or more of these schools inputted is not in the database currently. 
                   To update it, go to the Advanced tab before submitting.
                 </p>
               </div>
             )}
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowFirstConfirm(false);
-                  setMissingSchools([]);
-                }}
-                className="px-4 py-2 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => {
-                  if (missingSchools.length > 0) {
-                    alert('Cannot proceed. Please add missing schools in the Advanced tab before importing.');
-                    return;
-                  }
-                  setShowFirstConfirm(false);
-                  setShowSecondConfirm(true);
-                }}
-                className="px-4 py-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600"
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        }
+        onConfirm={() => {
+          if (missingSchools.length > 0) {
+            toast.error('Cannot proceed. Add missing schools in the Advanced tab first.');
+            return;
+          }
+          setShowFirstConfirm(false);
+          setShowSecondConfirm(true);
+        }}
+        onCancel={() => {
+          setShowFirstConfirm(false);
+          setMissingSchools([]);
+        }}
+        confirmText="Continue"
+      />
 
       {/* Second Confirmation Dialog */}
-      {showSecondConfirm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Final Confirmation</h3>
-            <p className="text-gray-700 mb-6">
+      <ConfirmDialog
+        isOpen={showSecondConfirm}
+        title="Final Confirmation"
+        message={
+          <>
+            <p className="text-gray-700 mb-4">
               Are you sure you want to import {csvData.length} student{csvData.length !== 1 ? 's' : ''}? 
               This action cannot be undone.
             </p>
             {missingSchools.length > 0 && (
-              <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                 <p className="text-sm text-yellow-800 font-medium">
                   ⚠️ Warning: One or more of these schools inputted is not in the database currently. 
                   To update it, go to the Advanced tab before submitting.
                 </p>
               </div>
             )}
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowSecondConfirm(false);
-                  setMissingSchools([]);
-                }}
-                disabled={isImporting}
-                className="px-4 py-2 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600 disabled:opacity-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleImport}
-                disabled={isImporting || missingSchools.length > 0}
-                className="px-4 py-2 text-sm bg-green-500 text-white rounded-md hover:bg-green-600 disabled:opacity-50"
-              >
-                {isImporting ? 'Importing...' : 'Yes, Import'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </>
+        }
+        onConfirm={handleImport}
+        onCancel={() => {
+          setShowSecondConfirm(false);
+          setMissingSchools([]);
+        }}
+        confirmText={isImporting ? 'Importing...' : 'Yes, Import'}
+        confirmButtonClass="bg-green-500 hover:bg-green-600"
+        isLoading={isImporting || missingSchools.length > 0}
+      />
 
     </div>
   );

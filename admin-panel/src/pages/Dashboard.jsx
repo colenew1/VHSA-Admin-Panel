@@ -3,33 +3,16 @@ import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getScreeningData, updateScreening, getSchools } from '../api/client';
 import { getRowStatus, getRowColor, hasFailedTest, formatDate, formatDOB, formatTestResult, getVisionOverall, getHearingOverall } from '../utils/statusHelpers';
+import { TEST_RESULT_OPTIONS, VISION_ACUITY_OPTIONS, GRADE_OPTIONS } from '../constants/screeningOptions';
 import EditableCell from '../components/EditableCell';
 import AdvancedFilters from '../components/AdvancedFilters';
 import ColorLegend from '../components/ColorLegend';
-
-// Test result options for dropdowns (Pass/Fail)
-const TEST_RESULT_OPTIONS = [
-  { value: '', label: '' },
-  { value: 'P', label: 'Pass' },
-  { value: 'F', label: 'Fail' },
-];
-
-// Vision acuity score options (20/20 to 20/100, increasing by tens)
-const VISION_ACUITY_OPTIONS = [
-  { value: '', label: '' },
-  { value: '20/20', label: '20/20' },
-  { value: '20/30', label: '20/30' },
-  { value: '20/40', label: '20/40' },
-  { value: '20/50', label: '20/50' },
-  { value: '20/60', label: '20/60' },
-  { value: '20/70', label: '20/70' },
-  { value: '20/80', label: '20/80' },
-  { value: '20/90', label: '20/90' },
-  { value: '20/100', label: '20/100' },
-];
+import { useToast } from '../components/Toast';
+import { SearchPrompt } from '../components/EmptyState';
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
+  const toast = useToast();
   
   // Filter state - no default dates, user must set them
   const [filters, setFilters] = useState({
@@ -87,7 +70,8 @@ export default function Dashboard() {
   });
 
   // Column filter state (search terms for each column)
-  const [columnFilters, setColumnFilters] = useState({
+  // Must match clearColumnFilters keys exactly
+  const defaultColumnFilters = {
     grade: '',
     returning: '',
     first_name: '',
@@ -100,6 +84,8 @@ export default function Dashboard() {
     glasses_contacts: '',
     screening_date: '',
     absent: '',
+    notes: '',
+    status_override: '',
     vision_overall: '',
     vision_initial_right: '',
     vision_initial_left: '',
@@ -121,8 +107,9 @@ export default function Dashboard() {
     acanthosis_initial: '',
     acanthosis_rescreen: '',
     scoliosis_initial: '',
-    scoliosis_rescreen: ''
-  });
+    scoliosis_rescreen: '',
+  };
+  const [columnFilters, setColumnFilters] = useState(defaultColumnFilters);
 
   // Fetch schools
   const { data: schoolsData } = useQuery({
@@ -424,7 +411,7 @@ export default function Dashboard() {
   // Handle search button click
   const handleSearch = () => {
     if (!filters.startDate || !filters.endDate) {
-      alert('Please select both start and end dates before searching.');
+      toast.warning('Please select both start and end dates before searching');
       return;
     }
     setHasSearched(true);
@@ -495,7 +482,7 @@ export default function Dashboard() {
       setEditingRowId(null);
     } catch (error) {
       console.error('Save error:', error);
-      alert('Failed to save changes. Please try again.');
+      toast.error('Failed to save changes. Please try again.');
     } finally {
       setSavingRows(prev => {
         const newState = { ...prev };
@@ -606,42 +593,7 @@ export default function Dashboard() {
 
   // Clear all column filters
   const clearColumnFilters = () => {
-    setColumnFilters({
-      grade: '',
-      returning: '',
-      first_name: '',
-      last_name: '',
-      student_id: '',
-      gender: '',
-      dob: '',
-      school: '',
-      teacher: '',
-      glasses_contacts: '',
-      screening_date: '',
-      vision_initial_right: '',
-      vision_initial_left: '',
-      vision_rescreen_right: '',
-      vision_rescreen_left: '',
-      hearing_initial_right_1000: '',
-      hearing_initial_right_2000: '',
-      hearing_initial_right_4000: '',
-      hearing_initial_left_1000: '',
-      hearing_initial_left_2000: '',
-      hearing_initial_left_4000: '',
-      hearing_rescreen_right_1000: '',
-      hearing_rescreen_right_2000: '',
-      hearing_rescreen_right_4000: '',
-      hearing_rescreen_left_1000: '',
-      hearing_rescreen_left_2000: '',
-      hearing_rescreen_left_4000: '',
-      acanthosis_initial: '',
-      acanthosis_rescreen: '',
-      scoliosis_initial: '',
-      scoliosis_rescreen: '',
-      absent: '',
-      notes: '',
-      status_override: ''
-    });
+    setColumnFilters(defaultColumnFilters);
     setCurrentPage(0);
   };
 
@@ -1222,24 +1174,7 @@ export default function Dashboard() {
                         value={displayData.grade || ''}
                         onChange={(value) => isEditing ? handleCellChange(uniqueId, 'grade', value) : undefined}
                         type={isEditing ? 'select' : 'text'}
-                        options={isEditing ? [
-                          { value: '', label: '' },
-                          { value: 'Pre-K (3)', label: 'Pre-K (3)' },
-                          { value: 'Pre-K (4)', label: 'Pre-K (4)' },
-                          { value: 'Kindergarten', label: 'Kindergarten' },
-                          { value: '1st', label: '1st' },
-                          { value: '2nd', label: '2nd' },
-                          { value: '3rd', label: '3rd' },
-                          { value: '4th', label: '4th' },
-                          { value: '5th', label: '5th' },
-                          { value: '6th', label: '6th' },
-                          { value: '7th', label: '7th' },
-                          { value: '8th', label: '8th' },
-                          { value: '9th', label: '9th' },
-                          { value: '10th', label: '10th' },
-                          { value: '11th', label: '11th' },
-                          { value: '12th', label: '12th' },
-                        ] : []}
+                        options={isEditing ? GRADE_OPTIONS : []}
                         className="text-sm font-medium"
                         disabled={!isEditing}
                       />

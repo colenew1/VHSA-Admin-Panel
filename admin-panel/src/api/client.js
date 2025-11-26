@@ -1,11 +1,11 @@
 import axios from 'axios';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const isDev = import.meta.env.DEV;
 
-// Log API URL for debugging (only in development or if not set)
-if (!import.meta.env.VITE_API_URL || import.meta.env.DEV) {
-  console.log('🔗 API URL:', API_URL);
-  console.log('🔗 Full API Base URL:', `${API_URL}/api`);
+// Log API URL only once on startup in development
+if (isDev) {
+  console.log('🔗 API configured:', `${API_URL}/api`);
 }
 
 const api = axios.create({
@@ -13,101 +13,44 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 30000, // 30 second timeout
+  timeout: 30000,
 });
 
-// AUTH REMOVED: Rebuilding auth as separate system
-// Add request interceptor to include auth token
-// api.interceptors.request.use(
-//   (config) => {
-//     // Get auth token from localStorage
-//     const storedSession = localStorage.getItem('auth_session');
-//     if (storedSession) {
-//       try {
-//         const session = JSON.parse(storedSession);
-//         if (session.access_token) {
-//           config.headers.Authorization = `Bearer ${session.access_token}`;
-//         }
-//       } catch (error) {
-//         console.error('Error parsing auth session:', error);
-//       }
-//     }
-//     return config;
-//   },
-//   (error) => {
-//     return Promise.reject(error);
-//   }
-// );
-
-// Add response interceptor to handle 401 errors (unauthorized)
-// api.interceptors.response.use(
-//   (response) => {
-//     return response;
-//   },
-//   (error) => {
-//     // If we get a 401, clear auth and redirect to login
-//     if (error.response?.status === 401) {
-//       localStorage.removeItem('auth_session');
-//       localStorage.removeItem('auth_user');
-//       // Redirect to login if we're not already there
-//       if (window.location.pathname !== '/login') {
-//         window.location.href = '/login';
-//       }
-//     }
-//     return Promise.reject(error);
-//   }
-// );
-
-// Add request interceptor for debugging (after auth interceptor)
+// Request logging (development only)
 api.interceptors.request.use(
   (config) => {
-    // Only log in development
-    if (import.meta.env.DEV) {
-      console.log('📤 API Request:', config.method?.toUpperCase(), config.url);
+    if (isDev) {
+      console.log('📤', config.method?.toUpperCase(), config.url);
     }
     return config;
   },
   (error) => {
-    console.error('❌ Request Error:', error);
+    console.error('❌ Request Error:', error.message);
     return Promise.reject(error);
   }
 );
 
-// Add response interceptor for error handling
+// Response error handling
 api.interceptors.response.use(
-  (response) => {
-    return response;
-  },
+  (response) => response,
   (error) => {
     if (error.code === 'ERR_NETWORK') {
-      console.error('❌ Network Error:', {
-        message: error.message,
-        code: error.code,
-        apiUrl: API_URL,
-        fullUrl: error.config?.url,
-        baseURL: error.config?.baseURL,
-      });
-      console.error('💡 Check: Is VITE_API_URL set correctly in Netlify?');
-      console.error('💡 Check: Is the backend server running?');
+      console.error('❌ Network Error - Check if backend is running');
+      if (isDev) {
+        console.error('  API URL:', API_URL);
+      }
     } else if (error.response) {
-      console.error('❌ API Error Response:', {
-        status: error.response.status,
-        statusText: error.response.statusText,
-        data: error.response.data,
-        url: error.config?.url,
-      });
-    } else {
-      console.error('❌ API Error:', error);
+      console.error('❌ API Error:', error.response.status, error.response.data?.error || error.response.statusText);
     }
     return Promise.reject(error);
   }
 );
 
-// Dashboard
+// ============= Dashboard API =============
 export const getDashboard = (params) => 
   api.get('/dashboard', { params }).then(res => res.data);
 
-// Students
+// ============= Students API =============
 export const getIncompleteStudents = (params) => 
   api.get('/students/incomplete', { params }).then(res => res.data);
 
@@ -129,7 +72,7 @@ export const getNextStudentId = (schoolName) =>
 export const searchStudentsWithNotes = (params) =>
   api.get('/students/search/notes', { params }).then(res => res.data);
 
-// Schools
+// ============= Schools API =============
 export const getSchools = () => 
   api.get('/schools').then(res => res.data);
 
@@ -142,7 +85,7 @@ export const updateSchool = (id, data) =>
 export const deleteSchool = (id) =>
   api.delete(`/schools/${id}`).then(res => res.data);
 
-// Screeners
+// ============= Screeners API =============
 export const getScreeners = () =>
   api.get('/screeners').then(res => res.data);
 
@@ -155,7 +98,7 @@ export const updateScreener = (id, data) =>
 export const deleteScreener = (id) =>
   api.delete(`/screeners/${id}`).then(res => res.data);
 
-// Admin Users (Emails)
+// ============= Admin Users API =============
 export const getAdminUsers = (params) =>
   api.get('/admin-users', { params }).then(res => res.data);
 
@@ -168,7 +111,7 @@ export const updateAdminUser = (id, data) =>
 export const deleteAdminUser = (id) =>
   api.delete(`/admin-users/${id}`).then(res => res.data);
 
-// Exports
+// ============= Exports API =============
 export const exportStateReport = (params) =>
   api.get('/exports/state', { params, responseType: 'blob' }).then(res => res.data);
 
@@ -187,14 +130,13 @@ export const updateReportingData = (data) =>
 export const exportReportingPDF = (params) =>
   api.post('/exports/reporting/pdf', params, { responseType: 'blob' }).then(res => res.data);
 
-// Student Export
 export const searchStudentsForExport = (params) =>
   api.get('/exports/students', { params }).then(res => res.data);
 
 export const exportStudentsCSV = (params) =>
   api.get('/exports/students/export', { params, responseType: 'blob' }).then(res => res.data);
 
-// Screening Data
+// ============= Screening API =============
 export const getScreeningData = (params) =>
   api.get('/screening/data', { params }).then(res => res.data);
 
@@ -202,4 +144,3 @@ export const updateScreening = (uniqueId, data) =>
   api.put(`/screening/${uniqueId}`, data).then(res => res.data);
 
 export default api;
-

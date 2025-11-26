@@ -1,10 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-// AUTH REMOVED: Rebuilding auth as separate system
-// import { AuthProvider } from './contexts/AuthContext';
-// import ProtectedRoute from './components/ProtectedRoute';
-// import Login from './pages/Login';
 import Navbar from './components/Navbar';
+import ErrorBoundary from './components/ErrorBoundary';
+import { ToastProvider } from './components/Toast';
 import Dashboard from './pages/Dashboard';
 import Search from './pages/Search';
 import Import from './pages/Import';
@@ -16,32 +14,35 @@ const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       retry: 1,
+      staleTime: 30000, // 30 seconds
     },
   },
 });
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      {/* AUTH REMOVED: All routes are now public while we rebuild auth system */}
-      <BrowserRouter>
-        <div className="min-h-screen bg-gray-50">
-          <Navbar />
-          <main className="container mx-auto px-4 py-6">
-            <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/students" element={<Search />} />
-              <Route path="/import" element={<Import />} />
-              <Route path="/export" element={<Export />} />
-              <Route path="/advanced" element={<Advanced />} />
-            </Routes>
-          </main>
-        </div>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>
+          <BrowserRouter>
+            <div className="min-h-screen bg-gray-50">
+              <Navbar />
+              <main className="container mx-auto px-4 py-6">
+                <Routes>
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/students" element={<Search />} />
+                  <Route path="/import" element={<Import />} />
+                  <Route path="/export" element={<Export />} />
+                  <Route path="/advanced" element={<Advanced />} />
+                </Routes>
+              </main>
+            </div>
+          </BrowserRouter>
+        </ToastProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }
 
 export default App;
-

@@ -1,52 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { searchStudentsById, searchStudentsByName, getStudentByUniqueId, createStudent, getSchools, updateScreening, searchStudentsWithNotes } from '../api/client';
 import { getRowStatus, getRowColor, hasFailedTest, formatDate, formatDOB, formatTestResult } from '../utils/statusHelpers';
+import { TEST_RESULT_OPTIONS, VISION_ACUITY_OPTIONS, GRADE_OPTIONS } from '../constants/screeningOptions';
 import EditableCell from '../components/EditableCell';
-
-// Test result options for dropdowns (Pass/Fail)
-const TEST_RESULT_OPTIONS = [
-  { value: '', label: '' },
-  { value: 'P', label: 'Pass' },
-  { value: 'F', label: 'Fail' },
-];
-
-// Vision acuity score options (20/20 to 20/100, increasing by tens)
-const VISION_ACUITY_OPTIONS = [
-  { value: '', label: '' },
-  { value: '20/20', label: '20/20' },
-  { value: '20/30', label: '20/30' },
-  { value: '20/40', label: '20/40' },
-  { value: '20/50', label: '20/50' },
-  { value: '20/60', label: '20/60' },
-  { value: '20/70', label: '20/70' },
-  { value: '20/80', label: '20/80' },
-  { value: '20/90', label: '20/90' },
-  { value: '20/100', label: '20/100' },
-];
-
-// Grade options - must match database format exactly
-const GRADE_OPTIONS = [
-  { value: '', label: '' },
-  { value: 'Pre-K (3)', label: 'Pre-K (3)' },
-  { value: 'Pre-K (4)', label: 'Pre-K (4)' },
-  { value: 'Kindergarten', label: 'Kindergarten' },
-  { value: '1st', label: '1st' },
-  { value: '2nd', label: '2nd' },
-  { value: '3rd', label: '3rd' },
-  { value: '4th', label: '4th' },
-  { value: '5th', label: '5th' },
-  { value: '6th', label: '6th' },
-  { value: '7th', label: '7th' },
-  { value: '8th', label: '8th' },
-  { value: '9th', label: '9th' },
-  { value: '10th', label: '10th' },
-  { value: '11th', label: '11th' },
-  { value: '12th', label: '12th' },
-];
+import ConfirmDialog from '../components/ConfirmDialog';
+import SuccessDialog from '../components/SuccessDialog';
+import { useToast } from '../components/Toast';
+import { SearchPrompt, NoSearchResults } from '../components/EmptyState';
 
 export default function Search() {
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const searchIdInputRef = useRef(null);
+  const searchNameInputRef = useRef(null);
+  
   const [activeTab, setActiveTab] = useState('search'); // 'search', 'add', or 'searchNotes'
   const [searchType, setSearchType] = useState('id'); // 'id' or 'name'
   const [searchStudentId, setSearchStudentId] = useState('');
@@ -149,7 +117,7 @@ export default function Search() {
     const useNameSearch = searchLastName.trim();
     
     if (!useIdSearch && !useNameSearch) {
-      alert('Please enter either a Student ID or Last Name');
+      toast.warning('Please enter either a Student ID or Last Name');
       return;
     }
     
@@ -171,16 +139,18 @@ export default function Search() {
       if (result && result.students) {
         setSearchResults(result.students);
         if (result.students.length === 0) {
-          alert('No students found matching your search.');
+          toast.info('No students found matching your search');
+        } else {
+          toast.success(`Found ${result.students.length} student${result.students.length !== 1 ? 's' : ''}`);
         }
       } else {
         setSearchResults([]);
-        alert('No students found matching your search.');
+        toast.info('No students found matching your search');
       }
     } catch (error) {
       console.error('Search error:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Search failed. Please try again.';
-      alert(`Search failed: ${errorMessage}`);
+      const errorMessage = error.response?.data?.error || error.message || 'Search failed';
+      toast.error(`Search failed: ${errorMessage}`);
       setSearchResults([]);
     } finally {
       setIsSearching(false);
@@ -209,12 +179,18 @@ export default function Search() {
       const result = await searchStudentsWithNotes(notesSearchFilters);
       if (result && result.students) {
         setNotesSearchResults(result.students);
+        if (result.students.length > 0) {
+          toast.success(`Found ${result.students.length} student${result.students.length !== 1 ? 's' : ''} with notes`);
+        } else {
+          toast.info('No students found with matching notes');
+        }
       } else {
         setNotesSearchResults([]);
+        toast.info('No results found');
       }
     } catch (error) {
       console.error('Search notes error:', error);
-      alert('Failed to search notes. Please try again.');
+      toast.error('Failed to search notes. Please try again.');
       setNotesSearchResults([]);
     } finally {
       setIsSearchingNotes(false);
@@ -247,7 +223,7 @@ export default function Search() {
         setEditingRowId(null);
       } catch (error) {
         console.error('Save error:', error);
-        alert('Failed to save changes. Please try again.');
+        toast.error('Failed to save changes. Please try again.');
       } finally {
         setSavingRows(prev => {
           const newState = { ...prev };
@@ -272,7 +248,7 @@ export default function Search() {
     // Validate required fields
     if (!newStudent.first_name || !newStudent.last_name || !newStudent.grade || 
         !newStudent.gender || !newStudent.dob || !newStudent.school || !newStudent.status) {
-      alert('Please fill in all required fields');
+      toast.warning('Please fill in all required fields');
       return;
     }
 
@@ -299,7 +275,7 @@ export default function Search() {
         });
       } catch (error) {
         console.error('Create error:', error);
-        alert('Failed to add student. Please try again.');
+        toast.error('Failed to add student. Please try again.');
       }
       setShowConfirmDialog(false);
     });
@@ -1587,71 +1563,35 @@ export default function Search() {
       </div>
 
       {/* Confirmation Dialog */}
-      {showConfirmDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Confirm Action</h3>
-            <p className="text-gray-700 mb-6">{confirmMessage}</p>
-            <div className="flex gap-3 justify-end">
-              <button
-                onClick={() => {
-                  setShowConfirmDialog(false);
-                  setConfirmAction(null);
-                  setConfirmMessage('');
-                }}
-                className="px-4 py-2 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={confirmActionHandler}
-                className="px-4 py-2 text-sm bg-blue-500 text-white rounded-md hover:bg-blue-600"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmDialog
+        isOpen={showConfirmDialog}
+        title="Confirm Action"
+        message={confirmMessage}
+        onConfirm={confirmActionHandler}
+        onCancel={() => {
+          setShowConfirmDialog(false);
+          setConfirmAction(null);
+          setConfirmMessage('');
+        }}
+      />
 
       {/* Success Dialog */}
-      {showSuccessDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
-            <div className="flex items-center justify-center mb-4">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center">
-                <svg className="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 text-center mb-2">
-              Student Created Successfully!
-            </h3>
-            <div className="text-center mb-4">
-              <p className="text-gray-700 mb-2">
-                Student ID: <span className="font-semibold text-gray-900">{createdStudentId}</span>
-              </p>
-              <p className="text-sm text-gray-600 mt-4">
-                To begin screening, please search for this student using the search form.
-              </p>
-            </div>
-            <div className="flex justify-end">
-              <button
-                onClick={() => {
-                  setShowSuccessDialog(false);
-                  setCreatedStudentId(null);
-                  // Switch to search tab
-                  setActiveTab('search');
-                }}
-                className="px-6 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 font-medium"
-              >
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SuccessDialog
+        isOpen={showSuccessDialog}
+        title="Student Created Successfully!"
+        onClose={() => {
+          setShowSuccessDialog(false);
+          setCreatedStudentId(null);
+          setActiveTab('search');
+        }}
+      >
+        <p className="text-gray-700 mb-2">
+          Student ID: <span className="font-semibold text-gray-900">{createdStudentId}</span>
+        </p>
+        <p className="text-sm text-gray-600 mt-4">
+          To begin screening, please search for this student using the search form.
+        </p>
+      </SuccessDialog>
     </div>
   );
 }
