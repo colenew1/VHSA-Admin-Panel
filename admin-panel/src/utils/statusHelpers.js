@@ -69,34 +69,123 @@ export function getFailedTests(student) {
 }
 
 /**
- * Check if student needs rescreen (has rescreen data or failed initial requiring rescreen)
+ * Get detailed rescreen status for a student
+ * Returns: { needed: string[], completed: string[], pending: string[] }
  */
-export function needsRescreen(student) {
+export function getRescreenStatus(student) {
   const isFail = (value) => {
     if (!value) return false;
     const normalized = value.toString().toUpperCase().trim();
     return normalized === 'F' || normalized === 'FAIL';
   };
   
-  // Has any rescreen data entered
-  const hasRescreenData = 
-    student.vision_rescreen_right || student.vision_rescreen_left ||
-    student.hearing_rescreen_right_1000 || student.hearing_rescreen_right_2000 || student.hearing_rescreen_right_4000 ||
-    student.hearing_rescreen_left_1000 || student.hearing_rescreen_left_2000 || student.hearing_rescreen_left_4000 ||
-    student.acanthosis_rescreen || student.scoliosis_rescreen;
+  const isPass = (value) => {
+    if (!value) return false;
+    const normalized = value.toString().toUpperCase().trim();
+    return normalized === 'P' || normalized === 'PASS';
+  };
   
-  if (hasRescreenData) return true;
+  const hasValue = (value) => value !== null && value !== undefined && value !== '';
   
-  // Failed initial but no rescreen yet - needs rescreen
-  const failedInitialVision = isFail(student.vision_initial_right) || isFail(student.vision_initial_left) || isFail(student.vision_overall);
-  const failedInitialHearing = isFail(student.hearing_initial_right_1000) || isFail(student.hearing_initial_right_2000) || 
+  const result = {
+    needed: [],      // Tests that failed initial (overall)
+    completed: [],   // Tests that had rescreen done
+    pending: [],     // Tests that still need rescreen (failed initial, no rescreen yet)
+    rescreenPassed: [], // Tests where rescreen was done and passed
+    rescreenFailed: [], // Tests where rescreen was done and failed
+  };
+  
+  // Vision: failed if initial failed OR overall marked as fail
+  const visionInitialFailed = isFail(student.vision_initial_right) || isFail(student.vision_initial_left) || isFail(student.vision_overall);
+  const visionRescreenDone = hasValue(student.vision_rescreen_right) || hasValue(student.vision_rescreen_left);
+  const visionRescreenPassed = !isFail(student.vision_rescreen_right) && !isFail(student.vision_rescreen_left) && visionRescreenDone;
+  
+  if (visionInitialFailed) {
+    result.needed.push('Vision');
+    if (visionRescreenDone) {
+      result.completed.push('Vision');
+      if (visionRescreenPassed) {
+        result.rescreenPassed.push('Vision');
+      } else {
+        result.rescreenFailed.push('Vision');
+      }
+    } else {
+      result.pending.push('Vision');
+    }
+  }
+  
+  // Hearing: failed if any frequency failed OR overall marked as fail
+  const hearingInitialFailed = isFail(student.hearing_initial_right_1000) || isFail(student.hearing_initial_right_2000) || 
                                isFail(student.hearing_initial_right_4000) || isFail(student.hearing_initial_left_1000) ||
                                isFail(student.hearing_initial_left_2000) || isFail(student.hearing_initial_left_4000) ||
                                isFail(student.hearing_overall);
-  const failedInitialAN = isFail(student.acanthosis_initial);
-  const failedInitialScoliosis = isFail(student.scoliosis_initial);
+  const hearingRescreenDone = hasValue(student.hearing_rescreen_right_1000) || hasValue(student.hearing_rescreen_left_1000);
+  const hearingRescreenPassed = hearingRescreenDone && 
+    !isFail(student.hearing_rescreen_right_1000) && !isFail(student.hearing_rescreen_right_2000) && !isFail(student.hearing_rescreen_right_4000) &&
+    !isFail(student.hearing_rescreen_left_1000) && !isFail(student.hearing_rescreen_left_2000) && !isFail(student.hearing_rescreen_left_4000);
   
-  return failedInitialVision || failedInitialHearing || failedInitialAN || failedInitialScoliosis;
+  if (hearingInitialFailed) {
+    result.needed.push('Hearing');
+    if (hearingRescreenDone) {
+      result.completed.push('Hearing');
+      if (hearingRescreenPassed) {
+        result.rescreenPassed.push('Hearing');
+      } else {
+        result.rescreenFailed.push('Hearing');
+      }
+    } else {
+      result.pending.push('Hearing');
+    }
+  }
+  
+  // Acanthosis
+  const anInitialFailed = isFail(student.acanthosis_initial);
+  const anRescreenDone = hasValue(student.acanthosis_rescreen);
+  const anRescreenPassed = anRescreenDone && isPass(student.acanthosis_rescreen);
+  
+  if (anInitialFailed) {
+    result.needed.push('AN');
+    if (anRescreenDone) {
+      result.completed.push('AN');
+      if (anRescreenPassed) {
+        result.rescreenPassed.push('AN');
+      } else {
+        result.rescreenFailed.push('AN');
+      }
+    } else {
+      result.pending.push('AN');
+    }
+  }
+  
+  // Scoliosis
+  const scoliosisInitialFailed = isFail(student.scoliosis_initial);
+  const scoliosisRescreenDone = hasValue(student.scoliosis_rescreen);
+  const scoliosisRescreenPassed = scoliosisRescreenDone && isPass(student.scoliosis_rescreen);
+  
+  if (scoliosisInitialFailed) {
+    result.needed.push('Scoliosis');
+    if (scoliosisRescreenDone) {
+      result.completed.push('Scoliosis');
+      if (scoliosisRescreenPassed) {
+        result.rescreenPassed.push('Scoliosis');
+      } else {
+        result.rescreenFailed.push('Scoliosis');
+      }
+    } else {
+      result.pending.push('Scoliosis');
+    }
+  }
+  
+  return result;
+}
+
+/**
+ * Check if student needs rescreen (failed initial but rescreen not done or not passed)
+ */
+export function needsRescreen(student) {
+  const status = getRescreenStatus(student);
+  // Needs rescreen if there are pending rescreens OR if rescreen was done but failed
+  return status.pending.length > 0 || status.rescreenFailed.length > 0;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { hasFailedTest, needsRescreen, getFailedTests, getRowStatus, formatTestResult, isTestFail, formatDOB } from '../utils/statusHelpers';
+import { hasFailedTest, needsRescreen, getFailedTests, getRowStatus, formatTestResult, isTestFail, formatDOB, getRescreenStatus } from '../utils/statusHelpers';
 import { TEST_RESULT_OPTIONS, VISION_ACUITY_OPTIONS, GRADE_OPTIONS } from '../constants/screeningOptions';
 
 /**
@@ -82,7 +82,7 @@ function getStateRequiredTests(student) {
 /**
  * Status badge component
  */
-function StatusBadge({ status, hasFailed, hasRescreen }) {
+function StatusBadge({ status, hasFailed, rescreenStatus }) {
   const statusConfig = {
     not_started: { bg: 'bg-gray-100', text: 'text-gray-700', border: 'border-gray-300', label: 'Not Started' },
     completed: { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300', label: 'Complete' },
@@ -92,19 +92,38 @@ function StatusBadge({ status, hasFailed, hasRescreen }) {
   
   const config = statusConfig[status] || statusConfig.not_started;
   
+  // Determine rescreen badge
+  const hasRescreenNeeded = rescreenStatus?.pending?.length > 0;
+  const hasRescreenPassed = rescreenStatus?.rescreenPassed?.length > 0 && rescreenStatus?.rescreenFailed?.length === 0 && rescreenStatus?.pending?.length === 0;
+  const hasRescreenFailed = rescreenStatus?.rescreenFailed?.length > 0;
+  
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text} border ${config.border}`}>
         {config.label}
       </span>
-      {hasFailed && (
+      
+      {/* Show FAILED if any initial test failed and no rescreen done yet */}
+      {hasFailed && !hasRescreenPassed && !hasRescreenFailed && (
         <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">
           FAILED
         </span>
       )}
-      {hasRescreen && !hasFailed && (
+      
+      {/* Rescreen status badges */}
+      {hasRescreenNeeded && (
         <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-700 border border-purple-300">
-          Rescreen
+          Rescreen Needed
+        </span>
+      )}
+      {hasRescreenPassed && (
+        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700 border border-green-300">
+          Rescreen Passed
+        </span>
+      )}
+      {hasRescreenFailed && (
+        <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-red-100 text-red-700 border border-red-300">
+          Rescreen Failed
         </span>
       )}
     </div>
@@ -320,6 +339,7 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
   const hasRescreenNeeded = needsRescreen(student);
   const failedTests = hasFailed ? getFailedTests(student) : [];
   const remainingTests = getRemainingTests(student);
+  const rescreenStatus = getRescreenStatus(student);
   
   const borderColors = {
     not_started: 'border-gray-200 hover:border-gray-400',
@@ -356,7 +376,7 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
             {student.grade} • {student.teacher || 'No Teacher'}
           </p>
         </div>
-        <StatusBadge status={status} hasFailed={hasFailed} hasRescreen={hasRescreenNeeded && !hasFailed} />
+        <StatusBadge status={status} hasFailed={hasFailed} rescreenStatus={rescreenStatus} />
       </div>
       
       <div className="flex items-center gap-3 text-xs text-gray-500">
@@ -387,6 +407,40 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
           ))}
         </div>
       )}
+      
+      {/* Rescreen Status */}
+      {rescreenStatus.needed.length > 0 && (
+        <div className="mt-2 space-y-1">
+          {/* Rescreen Needed (pending) */}
+          {rescreenStatus.pending.length > 0 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-xs text-purple-600 font-medium">Rescreen Needed:</span>
+              {rescreenStatus.pending.map(test => (
+                <span key={test} className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-xs font-medium">
+                  {test}
+                </span>
+              ))}
+            </div>
+          )}
+          
+          {/* Rescreen Completed - show if passed or failed */}
+          {rescreenStatus.completed.length > 0 && (
+            <div className="flex items-center gap-1 flex-wrap">
+              <span className="text-xs text-purple-600 font-medium">Rescreen Done:</span>
+              {rescreenStatus.rescreenPassed.map(test => (
+                <span key={test} className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs font-medium">
+                  {test} ✓
+                </span>
+              ))}
+              {rescreenStatus.rescreenFailed.map(test => (
+                <span key={test} className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-xs font-medium">
+                  {test} ✗
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -407,6 +461,7 @@ export function StudentCardExpanded({
   const status = getRowStatus(student);
   const hasFailed = hasFailedTest(student);
   const stateRequired = getStateRequiredTests(student);
+  const rescreenStatus = getRescreenStatus(student);
   
   // Check which test categories failed
   const visionFailed = isTestFail(student.vision_overall) || isTestFail(student.vision_initial_right) || isTestFail(student.vision_initial_left);
@@ -429,7 +484,7 @@ export function StudentCardExpanded({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <StatusBadge status={status} hasFailed={hasFailed} hasRescreen={needsRescreen(student)} />
+            <StatusBadge status={status} hasFailed={hasFailed} rescreenStatus={rescreenStatus} />
             <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
