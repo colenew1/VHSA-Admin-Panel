@@ -494,8 +494,14 @@ router.put('/:unique_id', async (req, res, next) => {
         .single();
 
       if (studentError) {
-        console.error('Error updating student:', studentError);
-        throw studentError;
+        console.error('❌ Error updating student:', studentError.message);
+        console.error('   Code:', studentError.code);
+        console.error('   Details:', studentError.details);
+        return res.status(500).json({ 
+          error: `Student update error: ${studentError.message}`,
+          code: studentError.code,
+          details: studentError.details
+        });
       }
 
       if (!studentData) {
@@ -529,6 +535,8 @@ router.put('/:unique_id', async (req, res, next) => {
       if (existingRecord) {
         // Update existing record
         console.log('Updating existing screening record...');
+        console.log('Update data:', JSON.stringify(filteredData, null, 2));
+        
         const { data, error } = await supabase
           .from('screening_results')
           .update(filteredData)
@@ -537,12 +545,18 @@ router.put('/:unique_id', async (req, res, next) => {
           .single();
 
         if (error) {
-          console.error('Error updating screening:', error);
-          console.error('Error details:', JSON.stringify(error, null, 2));
-          throw error;
+          console.error('❌ Error updating screening:', error.message);
+          console.error('   Code:', error.code);
+          console.error('   Details:', error.details);
+          console.error('   Hint:', error.hint);
+          return res.status(500).json({ 
+            error: `Database error: ${error.message}`,
+            code: error.code,
+            details: error.details
+          });
         }
         screeningData = data;
-        console.log('Screening record updated successfully');
+        console.log('✅ Screening record updated successfully');
       } else {
         // Create new screening record - need to get student_id first
         console.log('Creating new screening record...');
@@ -576,12 +590,18 @@ router.put('/:unique_id', async (req, res, next) => {
           .single();
 
         if (error) {
-          console.error('Error creating screening record:', error);
-          console.error('Error details:', JSON.stringify(error, null, 2));
-          throw error;
+          console.error('❌ Error creating screening record:', error.message);
+          console.error('   Code:', error.code);
+          console.error('   Details:', error.details);
+          console.error('   Hint:', error.hint);
+          return res.status(500).json({ 
+            error: `Database error: ${error.message}`,
+            code: error.code,
+            details: error.details
+          });
         }
         screeningData = data;
-        console.log('Screening record created successfully');
+        console.log('✅ Screening record created successfully');
       }
     }
 

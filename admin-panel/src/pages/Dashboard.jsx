@@ -102,14 +102,14 @@ export default function DashboardNew() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedData, setEditedData] = useState({});
   const [isSaving, setIsSaving] = useState(false);
-  
+
   // Fetch schools
   const { data: schoolsData } = useQuery({
     queryKey: ['schools'],
     queryFn: getSchools,
   });
   const schools = schoolsData?.schools || [];
-  
+
   // Fetch screening data
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['screening', school, year, pageSize, currentPage],
@@ -131,7 +131,7 @@ export default function DashboardNew() {
       queryClient.invalidateQueries(['screening']);
     },
   });
-  
+
   const allStudents = data?.data || [];
   
   // Standard grade order
@@ -221,24 +221,24 @@ export default function DashboardNew() {
         case 'name':
           aVal = `${a.last_name || ''} ${a.first_name || ''}`.toLowerCase();
           bVal = `${b.last_name || ''} ${b.first_name || ''}`.toLowerCase();
-          break;
+        break;
         case 'grade':
           // Sort grades in logical order
           aVal = GRADE_ORDER.indexOf(a.grade);
           bVal = GRADE_ORDER.indexOf(b.grade);
           if (aVal === -1) aVal = 999;
           if (bVal === -1) bVal = 999;
-          break;
+        break;
         case 'date':
           aVal = a.initial_screening_date || '';
           bVal = b.initial_screening_date || '';
-          break;
+        break;
         case 'status':
           const statusOrder = { not_started: 0, incomplete: 1, completed: 2, absent: 3 };
           aVal = statusOrder[getRowStatus(a)] ?? 99;
           bVal = statusOrder[getRowStatus(b)] ?? 99;
-          break;
-        default:
+        break;
+      default:
           aVal = 0;
           bVal = 0;
       }
@@ -322,10 +322,16 @@ export default function DashboardNew() {
       const uniqueId = editedData.unique_id || editedData.student_id;
       await updateMutation.mutateAsync({ uniqueId, data: editedData });
       toast.success('Student updated successfully');
+      // Keep showing editedData until query refetches
       setSelectedStudent(editedData);
       setIsEditing(false);
+      // Refetch to get updated data from server
+      await refetch();
     } catch (err) {
-      toast.error('Failed to save: ' + err.message);
+      // Show more detailed error from server
+      const errorMsg = err.response?.data?.error || err.message;
+      toast.error('Failed to save: ' + errorMsg);
+      console.error('Save error:', err.response?.data || err);
     } finally {
       setIsSaving(false);
     }
@@ -357,7 +363,7 @@ export default function DashboardNew() {
   
   const hasActiveFilters = statusFilter || showFailed || showRescreen || searchQuery || gradeFilter !== 'all' || teacherSearch;
   
-  return (
+    return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
@@ -368,7 +374,7 @@ export default function DashboardNew() {
               <p className="text-sm text-gray-500">
                 {school === 'all' ? 'All Schools' : school} • {year}
               </p>
-            </div>
+        </div>
             
             {/* Quick Filters */}
             <div className="flex items-center gap-3">
@@ -393,20 +399,20 @@ export default function DashboardNew() {
                 ))}
               </select>
               
-              <button
-                onClick={() => refetch()}
+        <button
+          onClick={() => refetch()}
                 className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
                 title="Refresh"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+        </button>
             </div>
           </div>
         </div>
       </div>
-      
+
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats Cards */}
         <div className="flex flex-wrap gap-4 mb-6">
@@ -489,10 +495,10 @@ export default function DashboardNew() {
                 <option key={g} value={g}>{g}</option>
               ))}
             </select>
-            
+
             {/* Sort */}
             <div className="flex items-center gap-1">
-              <select
+            <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value)}
                 className="px-3 py-2.5 border border-gray-300 rounded-l-lg text-sm focus:ring-2 focus:ring-blue-500"
@@ -501,7 +507,7 @@ export default function DashboardNew() {
                 <option value="grade">Sort: Grade</option>
                 <option value="date">Sort: Date</option>
                 <option value="status">Sort: Status</option>
-              </select>
+            </select>
               <button
                 onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
                 className="px-3 py-2.5 border border-l-0 border-gray-300 rounded-r-lg text-sm hover:bg-gray-50"
@@ -509,9 +515,9 @@ export default function DashboardNew() {
               >
                 {sortDir === 'asc' ? '↑' : '↓'}
               </button>
-            </div>
           </div>
-          
+          </div>
+
           {/* Row 2: Quick Filter Chips */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm text-gray-500">Quick filters:</span>
@@ -566,7 +572,7 @@ export default function DashboardNew() {
               </button>
             </div>
           </div>
-          
+
           {/* Advanced Filters (Teacher Search) */}
           {showAdvanced && (
             <div className="mt-3 pt-3 border-t border-gray-100">
@@ -581,24 +587,24 @@ export default function DashboardNew() {
                     className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                   {teacherSearch && (
-                    <button
+            <button
                       onClick={() => setTeacherSearch('')}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    >
+            >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
+              </svg>
+              </button>
+            )}
+          </div>
                 {teacherSearch && (
                   <span className="text-sm text-gray-500">
                     Showing students with teacher matching "{teacherSearch}"
                   </span>
                 )}
-              </div>
-            </div>
-          )}
+        </div>
+          </div>
+        )}
           
           {/* Row 3: Results count and pagination */}
           <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
@@ -611,18 +617,18 @@ export default function DashboardNew() {
             {/* Page size */}
             <div className="flex items-center gap-2">
               <label className="text-sm text-gray-500">Per page:</label>
-              <select
-                value={pageSize}
+          <select
+            value={pageSize}
                 onChange={(e) => { setPageSize(Number(e.target.value)); setCurrentPage(0); }}
                 className="px-2 py-1 border border-gray-300 rounded text-sm"
               >
                 <option value={25}>25</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-              </select>
-            </div>
-          </div>
+            <option value={50}>50</option>
+            <option value={100}>100</option>
+          </select>
         </div>
+        </div>
+      </div>
         
         {/* Loading State */}
         {isLoading && (
@@ -633,8 +639,8 @@ export default function DashboardNew() {
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
               <p className="text-gray-500">Loading screening data...</p>
-            </div>
-          </div>
+        </div>
+                      </div>
         )}
         
         {/* Error State */}
@@ -681,47 +687,47 @@ export default function DashboardNew() {
                   isSelected={selectedStudent?.unique_id === student.unique_id}
                 />
               ))}
-            </div>
+                          </div>
             
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2">
-                <button
+                          <div className="flex items-center justify-center gap-2">
+                            <button
                   onClick={() => setCurrentPage(0)}
                   disabled={currentPage === 0}
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   First
-                </button>
-                <button
+                            </button>
+                            <button
                   onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
                   disabled={currentPage === 0}
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   Previous
-                </button>
+                            </button>
                 <span className="px-4 py-2 text-sm text-gray-600">
                   Page {currentPage + 1} of {totalPages}
                 </span>
-                <button
+                        <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages - 1, p + 1))}
                   disabled={currentPage >= totalPages - 1}
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-                >
+                        >
                   Next
-                </button>
-                <button
+                        </button>
+              <button
                   onClick={() => setCurrentPage(totalPages - 1)}
                   disabled={currentPage >= totalPages - 1}
                   className="px-3 py-2 text-sm border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
                 >
                   Last
-                </button>
-              </div>
+              </button>
+            </div>
             )}
           </>
         )}
-      </div>
+          </div>
       
       {/* Student Detail Modal */}
       {selectedStudent && createPortal(
@@ -740,7 +746,7 @@ export default function DashboardNew() {
               onClose={() => { setSelectedStudent(null); setIsEditing(false); }}
               isSaving={isSaving}
             />
-          </div>
+        </div>
         </div>,
         document.body
       )}
