@@ -19,8 +19,54 @@ const CSV_HEADERS = [
   'Status',
 ];
 
+// Header aliases - maps various header names to standardized field names
+const HEADER_ALIASES = {
+  // First Name variations
+  'first name': 'first_name', 'firstname': 'first_name', 'fname': 'first_name', 
+  'first': 'first_name', 'f_name': 'first_name', 'given name': 'first_name',
+  'given_name': 'first_name', 'givenname': 'first_name',
+  
+  // Last Name variations
+  'last name': 'last_name', 'lastname': 'last_name', 'lname': 'last_name',
+  'last': 'last_name', 'l_name': 'last_name', 'surname': 'last_name',
+  'family name': 'last_name', 'family_name': 'last_name', 'familyname': 'last_name',
+  
+  // Grade variations
+  'grade': 'grade', 'gr': 'grade', 'grade level': 'grade', 'gradelevel': 'grade',
+  'grade_level': 'grade', 'class': 'grade', 'year': 'grade', 'level': 'grade',
+  
+  // Gender variations
+  'gender': 'gender', 'sex': 'gender', 'g': 'gender', 'm/f': 'gender',
+  
+  // Date of Birth variations
+  'date of birth': 'dob', 'date_of_birth': 'dob', 'dateofbirth': 'dob',
+  'dob': 'dob', 'birth date': 'dob', 'birthdate': 'dob', 'birth_date': 'dob',
+  'birthday': 'dob', 'bday': 'dob', 'b-day': 'dob', 'bd': 'dob',
+  
+  // School variations
+  'school': 'school', 'school name': 'school', 'schoolname': 'school',
+  'school_name': 'school', 'campus': 'school', 'location': 'school',
+  
+  // Teacher variations
+  'teacher last name': 'teacher', 'teacher_last_name': 'teacher', 'teacherlastname': 'teacher',
+  'teacher': 'teacher', 'teacher name': 'teacher', 'teachername': 'teacher',
+  'teacher_name': 'teacher', 'instructor': 'teacher', 'homeroom': 'teacher',
+  'homeroom teacher': 'teacher', 'hr teacher': 'teacher',
+  
+  // Status variations
+  'status': 'status', 'student status': 'status', 'enrollment': 'status',
+  'enrollment status': 'status', 'type': 'status', 'new/returning': 'status',
+  'n/r': 'status',
+};
+
 // Required fields for validation
 const REQUIRED_FIELDS = ['first_name', 'last_name', 'grade', 'gender', 'dob', 'school', 'status'];
+
+// Normalize a header to its standard field name
+const normalizeHeader = (header) => {
+  const lower = header.toLowerCase().replace(/[_\-]+/g, ' ').trim();
+  return HEADER_ALIASES[lower] || lower.replace(/\s+/g, '_');
+};
 
 export default function Import() {
   const queryClient = useQueryClient();
@@ -139,14 +185,26 @@ export default function Import() {
       throw new Error('CSV file must have at least a header row and one data row');
     }
 
-    const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+    const rawHeaders = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
     
-    const expectedHeaders = CSV_HEADERS.map(h => h.toLowerCase());
-    const actualHeaders = headers.map(h => h.toLowerCase());
+    // Normalize headers to standard field names
+    const normalizedHeaders = rawHeaders.map(h => normalizeHeader(h));
     
-    const missingHeaders = expectedHeaders.filter(h => !actualHeaders.includes(h));
-    if (missingHeaders.length > 0) {
-      throw new Error(`Missing required columns: ${missingHeaders.join(', ')}`);
+    // Check for required fields (using normalized names)
+    const requiredFields = ['first_name', 'last_name', 'grade', 'gender', 'dob', 'school'];
+    const missingFields = requiredFields.filter(field => !normalizedHeaders.includes(field));
+    
+    if (missingFields.length > 0) {
+      const friendlyNames = {
+        first_name: 'First Name (or fname, firstname)',
+        last_name: 'Last Name (or lname, lastname, surname)',
+        grade: 'Grade (or gr, level, class)',
+        gender: 'Gender (or sex)',
+        dob: 'Date of Birth (or dob, birthday, birthdate)',
+        school: 'School',
+      };
+      const missingFriendly = missingFields.map(f => friendlyNames[f] || f);
+      throw new Error(`Missing required columns: ${missingFriendly.join(', ')}`);
     }
 
     const data = [];
@@ -154,10 +212,10 @@ export default function Import() {
       const values = parseCSVLine(lines[i]).map(v => v.replace(/^"|"$/g, '').trim());
       if (values.length === 0 || values.every(v => !v)) continue;
       
+      // Map values to normalized field names
       const row = {};
-      headers.forEach((header, index) => {
-        const key = header.toLowerCase().replace(/\s+/g, '_');
-        row[key] = values[index] || '';
+      normalizedHeaders.forEach((field, index) => {
+        row[field] = values[index] || '';
       });
       
       const normalizedRow = {
@@ -165,9 +223,9 @@ export default function Import() {
         last_name: (row.last_name || '').trim(),
         grade: normalizeGrade(row.grade || ''),
         gender: normalizeGender(row.gender || ''),
-        dob: normalizeDate(row.date_of_birth || row.dob || ''),
+        dob: normalizeDate(row.dob || ''),
         school: normalizeSchoolName(row.school || '', schools),
-        teacher: (row.teacher_last_name || row.teacher || '').trim(),
+        teacher: (row.teacher || '').trim(),
         status: normalizeStatus(row.status || 'New'),
         unique_id: '',
       };

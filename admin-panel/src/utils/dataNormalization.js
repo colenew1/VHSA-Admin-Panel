@@ -28,21 +28,29 @@ export const generateSchoolAbbreviation = (schoolName) => {
 export const normalizeGrade = (input) => {
   if (!input) return '';
   
-  const normalized = String(input).trim().toLowerCase();
+  const normalized = String(input).trim().toLowerCase().replace(/[()]/g, '').replace(/\s+/g, ' ');
   
-  // Pre-K variations - must return 'Pre-K (3)' or 'Pre-K (4)'
-  if (/pre[-\s]?k[-\s]?3|pk3|pre[-\s]?kindergarten[-\s]?3|pre[-\s]?k[-\s]?three|pre[-\s]?k[-\s]?\(3\)/i.test(normalized)) {
+  // Pre-K 3 variations - many formats accepted
+  // pk3, prek3, pre-k3, pre k 3, pre-k-3, pre-k (3), prek-3, p3, pre3, prek 3, prekindergarten 3, etc.
+  if (/^p[-\s]?k?[-\s]?3$|^pre[-\s]?k[-\s]?3|^prek[-\s]?3|^pre[-\s]?kindergarten[-\s]?3|^pre[-\s]?k[-\s]?three|^p[-\s]?3$/i.test(normalized)) {
     return 'Pre-K (3)';
   }
-  if (/pre[-\s]?k[-\s]?4|pk4|pre[-\s]?kindergarten[-\s]?4|pre[-\s]?k[-\s]?four|pre[-\s]?k[-\s]?\(4\)/i.test(normalized)) {
+  
+  // Pre-K 4 variations - many formats accepted
+  // pk4, prek4, pre-k4, pre k 4, pre-k-4, pre-k (4), prek-4, p4, pre4, prek 4, prekindergarten 4, etc.
+  if (/^p[-\s]?k?[-\s]?4$|^pre[-\s]?k[-\s]?4|^prek[-\s]?4|^pre[-\s]?kindergarten[-\s]?4|^pre[-\s]?k[-\s]?four|^p[-\s]?4$/i.test(normalized)) {
     return 'Pre-K (4)';
   }
-  if (/pre[-\s]?k|pk|pre[-\s]?kindergarten/i.test(normalized)) {
+  
+  // Generic Pre-K (defaults to Pre-K 4)
+  // pk, prek, pre-k, pre k, prekindergarten, pre kindergarten
+  if (/^p[-\s]?k$|^pre[-\s]?k$|^prek$|^pre[-\s]?kindergarten$/i.test(normalized)) {
     return 'Pre-K (4)'; // Default to Pre-K (4) if just "Pre-K"
   }
   
   // Kindergarten variations - must return 'Kindergarten'
-  if (/^k$|kindergarten|kinder|kg/i.test(normalized)) {
+  // k, kg, kinder, kindergarten, kind, kgarten
+  if (/^k$|^kg$|^kindergarten$|^kinder$|^kind$|^kgarten$|^kindy$/i.test(normalized)) {
     return 'Kindergarten';
   }
   
@@ -143,11 +151,13 @@ export const normalizeStatus = (input) => {
   
   const normalized = String(input).trim().toLowerCase();
   
-  if (/returning|return|ret|old|existing/i.test(normalized)) {
+  // Returning variations: r, ret, return, returning, re, old, existing, 2nd year, repeat, comeback
+  if (/^r$|^re$|^ret$|^return$|^returning$|^old$|^existing$|^2nd[-\s]?year$|^repeat$|^comeback$|^continuing$/i.test(normalized)) {
     return 'Returning';
   }
   
-  if (/new|first[-\s]?time|new[-\s]?student/i.test(normalized)) {
+  // New variations: n, new, first, 1st, first-time, new-student, fresh, newbie, freshman (if context)
+  if (/^n$|^new$|^first$|^1st$|^first[-\s]?time$|^new[-\s]?student$|^fresh$|^newbie$|^ne$/i.test(normalized)) {
     return 'New';
   }
   
