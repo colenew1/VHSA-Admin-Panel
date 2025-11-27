@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getSchools, createStudent, getNextStudentId, createSchool } from '../api/client';
+import { getSchools, createStudent, getNextStudentId, createSchool, getScreeningData } from '../api/client';
 import EditableCell from '../components/EditableCell';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useToast } from '../components/Toast';
@@ -75,8 +75,10 @@ export default function Import() {
   const [editingRowIndex, setEditingRowIndex] = useState(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [showAddSchoolsDialog, setShowAddSchoolsDialog] = useState(false);
+  const [showDuplicatesDialog, setShowDuplicatesDialog] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [isAddingSchools, setIsAddingSchools] = useState(false);
+  const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 });
   const [importResults, setImportResults] = useState(null); // { success: [], errors: [] }
   const fileInputRef = useRef(null);
@@ -84,6 +86,9 @@ export default function Import() {
   
   // Track missing schools for warning
   const [missingSchools, setMissingSchools] = useState([]);
+  
+  // Track duplicates
+  const [duplicates, setDuplicates] = useState({ inCsv: [], inDatabase: [] });
 
   // Fetch schools for dropdown
   const { data: schoolsData } = useQuery({
@@ -251,6 +256,110 @@ export default function Import() {
     return missing.length > 0;
   };
 
+  // Generate a unique key for a student (for duplicate detection)
+  const getStudentKey = (student) => {
+    const firstName = (student.first_name || student.firstName || '').toLowerCase().trim();
+    const lastName = (student.last_name || student.lastName || '').toLowerCase().trim();
+    const dob = (student.dob || student.date_of_birth || '').trim();
+    const school = (student.school || '').toLowerCase().trim();
+    return `${firstName}|${lastName}|${dob}|${school}`;
+  };
+
+  // Check for duplicates within CSV and against database
+  const checkDuplicates = async () => {
+    setIsCheckingDuplicates(true);
+    
+    try {
+      // 1. Check for duplicates within the CSV itself
+      const csvKeys = new Map();
+      const inCsvDuplicates = [];
+      
+      csvData.forEach((row, index) => {
+        const key = getStudentKey(row);
+        if (csvKeys.has(key)) {
+          inCsvDuplicates.push({
+            row: index + 1,
+            name: `${row.first_name} ${row.last_name}`,
+            dob: row.dob,
+            school: row.school,
+            duplicateOf: csvKeys.get(key).row,
+          });
+        } else {
+          csvKeys.set(key, { row: index + 1, data: row });
+        }
+      });
+
+      // 2. Check against existing students in database
+      const schoolsInCsv = [...new Set(csvData.map(r => r.school).filter(Boolean))];
+      const currentYear = new Date().getFullYear();
+      
+      // Fetch existing students for all schools in the CSV
+      const existingStudents = [];
+      for (const schoolName of schoolsInCsv) {
+        try {
+          const data = await getScreeningData({ school: schoolName, year: currentYear });
+          if (data.students) {
+            existingStudents.push(...data.students);
+          }
+        } catch (err) {
+          console.warn(`Could not fetch students for ${schoolName}:`, err);
+        }
+      }
+      
+      // Build a set of existing student keys
+      const existingKeys = new Set(existingStudents.map(s => getStudentKey({
+        first_name: s.first_name || s.firstName,
+        last_name: s.last_name || s.lastName,
+        dob: s.dob || s.date_of_birth,
+        school: s.school,
+      })));
+      
+      // Check CSV rows against existing students
+      const inDatabaseDuplicates = [];
+      csvData.forEach((row, index) => {
+        const key = getStudentKey(row);
+        if (existingKeys.has(key)) {
+          inDatabaseDuplicates.push({
+            row: index + 1,
+            name: `${row.first_name} ${row.last_name}`,
+            dob: row.dob,
+            school: row.school,
+          });
+        }
+      });
+      
+      setDuplicates({ inCsv: inCsvDuplicates, inDatabase: inDatabaseDuplicates });
+      return inCsvDuplicates.length > 0 || inDatabaseDuplicates.length > 0;
+    } catch (error) {
+      console.error('Error checking duplicates:', error);
+      toast.error('Error checking for duplicates');
+      return false;
+    } finally {
+      setIsCheckingDuplicates(false);
+    }
+  };
+
+  // Remove duplicates from CSV data
+  const removeDuplicates = () => {
+    // Get row indices to remove (both in-CSV and in-database duplicates)
+    const rowsToRemove = new Set([
+      ...duplicates.inCsv.map(d => d.row - 1),
+      ...duplicates.inDatabase.map(d => d.row - 1),
+    ]);
+    
+    const filtered = csvData.filter((_, index) => !rowsToRemove.has(index));
+    setCsvData(filtered);
+    setDuplicates({ inCsv: [], inDatabase: [] });
+    setShowDuplicatesDialog(false);
+    
+    toast.success(`Removed ${rowsToRemove.size} duplicate(s)`);
+    
+    // Continue to import dialog if there are remaining students
+    if (filtered.length > 0) {
+      setShowConfirmDialog(true);
+    }
+  };
+
   // Add missing schools to the database
   const handleAddMissingSchools = async () => {
     setIsAddingSchools(true);
@@ -264,8 +373,13 @@ export default function Import() {
       setMissingSchools([]);
       setShowAddSchoolsDialog(false);
       
-      // Re-check and proceed with import
-      setShowConfirmDialog(true);
+      // Check for duplicates before proceeding
+      const hasDuplicates = await checkDuplicates();
+      if (hasDuplicates) {
+        setShowDuplicatesDialog(true);
+      } else {
+        setShowConfirmDialog(true);
+      }
     } catch (error) {
       toast.error(`Failed to add schools: ${error.message}`);
     } finally {
@@ -585,21 +699,34 @@ export default function Import() {
                   Clear All
                 </button>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     const hasMissing = checkMissingSchools();
                     if (hasMissing) {
                       setShowAddSchoolsDialog(true);
                     } else {
-                      setShowConfirmDialog(true);
+                      // Check for duplicates
+                      const hasDuplicates = await checkDuplicates();
+                      if (hasDuplicates) {
+                        setShowDuplicatesDialog(true);
+                      } else {
+                        setShowConfirmDialog(true);
+                      }
                     }
                   }}
-                  disabled={csvData.length === 0}
+                  disabled={csvData.length === 0 || isCheckingDuplicates}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  Import Students
+                  {isCheckingDuplicates ? (
+                    <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                  )}
+                  {isCheckingDuplicates ? 'Checking...' : 'Import Students'}
                 </button>
               </div>
             </div>
@@ -908,6 +1035,63 @@ export default function Import() {
         cancelText="Cancel"
         confirmButtonClass="bg-blue-600 hover:bg-blue-700"
         isLoading={isAddingSchools}
+      />
+
+      {/* Duplicates Found Dialog */}
+      <ConfirmDialog
+        isOpen={showDuplicatesDialog}
+        title="Duplicates Found"
+        message={
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              Found {duplicates.inCsv.length + duplicates.inDatabase.length} duplicate(s) that match existing records.
+            </p>
+            
+            {/* Duplicates within CSV */}
+            {duplicates.inCsv.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-amber-800 mb-2">
+                  📋 Duplicates within your CSV ({duplicates.inCsv.length}):
+                </p>
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 max-h-32 overflow-y-auto">
+                  {duplicates.inCsv.map((dup, i) => (
+                    <div key={i} className="text-sm text-amber-800">
+                      Row {dup.row}: {dup.name} ({dup.dob}) - duplicate of row {dup.duplicateOf}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Duplicates in database */}
+            {duplicates.inDatabase.length > 0 && (
+              <div>
+                <p className="text-sm font-medium text-red-800 mb-2">
+                  🗄️ Already in database ({duplicates.inDatabase.length}):
+                </p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 max-h-32 overflow-y-auto">
+                  {duplicates.inDatabase.map((dup, i) => (
+                    <div key={i} className="text-sm text-red-800">
+                      Row {dup.row}: {dup.name} ({dup.dob}) at {dup.school}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <p className="text-gray-600 text-sm">
+              Would you like to remove these duplicates and continue importing the rest?
+            </p>
+          </div>
+        }
+        onConfirm={removeDuplicates}
+        onCancel={() => {
+          setShowDuplicatesDialog(false);
+          setDuplicates({ inCsv: [], inDatabase: [] });
+        }}
+        confirmText={`Remove ${duplicates.inCsv.length + duplicates.inDatabase.length} Duplicate(s)`}
+        cancelText="Cancel Import"
+        confirmButtonClass="bg-amber-600 hover:bg-amber-700"
       />
     </div>
   );
