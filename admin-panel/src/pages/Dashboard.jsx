@@ -153,9 +153,9 @@ export default function DashboardNew() {
       total: allStudents.length,
       completed: 0,
       incomplete: 0,
+      needsRescreen: 0,
       notStarted: 0,
       failed: 0,
-      rescreen: 0,
       absent: 0,
     };
     
@@ -163,11 +163,11 @@ export default function DashboardNew() {
       const status = getRowStatus(student);
       if (status === 'completed') s.completed++;
       else if (status === 'incomplete') s.incomplete++;
+      else if (status === 'needs_rescreen') s.needsRescreen++;
       else if (status === 'not_started') s.notStarted++;
       else if (status === 'absent') s.absent++;
       
       if (isCurrentlyFailed(student)) s.failed++;
-      if (needsRescreen(student)) s.rescreen++;
     });
     
     return s;
@@ -450,11 +450,11 @@ export default function DashboardNew() {
           />
           <StatCard
             label="Needs Rescreen"
-            value={stats.rescreen}
+            value={stats.needsRescreen}
             icon="↻"
             color="purple"
-            isActive={showRescreen}
-            onClick={() => { setShowRescreen(!showRescreen); setStatusFilter(null); setShowFailed(false); }}
+            isActive={statusFilter === 'needs_rescreen'}
+            onClick={() => { setStatusFilter(statusFilter === 'needs_rescreen' ? null : 'needs_rescreen'); setShowFailed(false); setShowRescreen(false); }}
           />
           <StatCard
             label="Absent"

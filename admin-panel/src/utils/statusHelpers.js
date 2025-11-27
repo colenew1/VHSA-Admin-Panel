@@ -4,22 +4,45 @@
 
 /**
  * Check if student turned 4 by September 1st based on their DOB
- * Returns true if birthday is on or before September 1st (month/day only)
+ * Returns true if birthday (month/day) is on or before September 1st
+ * 
+ * Logic: Pre-K 4 students need V/H screening ONLY if they turned 4 BY September 1st
+ * - Born Jan-Aug: They turn 4 before Sept 1 → REQUIRED
+ * - Born Sept 1: They turn 4 ON Sept 1 → REQUIRED  
+ * - Born Sept 2-Dec: They turn 4 AFTER Sept 1 → NOT REQUIRED
  */
 function turned4BySept1(dob) {
-  if (!dob) return true; // Default to required if no DOB
+  if (!dob) return true; // Default to required if no DOB (safety)
   
-  const birthDate = new Date(dob);
-  const month = birthDate.getMonth() + 1; // getMonth() is 0-indexed
-  const day = birthDate.getDate();
+  // Parse date string directly to avoid timezone issues
+  // DOB format is typically "YYYY-MM-DD"
+  const dobStr = String(dob);
+  let month, day;
   
-  // If born Jan-Aug, they turned 4 before Sept 1 → Required
-  if (month <= 8) return true;
+  if (dobStr.includes('-')) {
+    // ISO format: "2020-10-15"
+    const parts = dobStr.split('-');
+    month = parseInt(parts[1], 10);
+    day = parseInt(parts[2], 10);
+  } else if (dobStr.includes('/')) {
+    // US format: "10/15/2020" 
+    const parts = dobStr.split('/');
+    month = parseInt(parts[0], 10);
+    day = parseInt(parts[1], 10);
+  } else {
+    // Fallback to Date object
+    const birthDate = new Date(dob);
+    month = birthDate.getMonth() + 1;
+    day = birthDate.getDate();
+  }
   
-  // If born Sept 1, they turned 4 on Sept 1 → Required
+  // If born Jan-Aug (months 1-8), they turn 4 before Sept 1 → Required
+  if (month >= 1 && month <= 8) return true;
+  
+  // If born Sept 1 (month 9, day 1), they turn 4 ON Sept 1 → Required
   if (month === 9 && day === 1) return true;
   
-  // If born Sept 2-30 or Oct-Dec, they turned 4 after Sept 1 → Not required
+  // If born Sept 2-30 or Oct-Dec (month 9 day 2+ or months 10-12), they turn 4 AFTER Sept 1 → Not required
   return false;
 }
 
@@ -376,7 +399,12 @@ function hasScreeningData(student) {
 
 /**
  * Determine the computed status of a student's screening (without override)
- * IMPORTANT: "completed" only when all screenings done AND all rescreens done (if any failed)
+ * Statuses:
+ * - not_started: no screening record
+ * - absent: marked absent with no data
+ * - incomplete: initial screenings not all done yet
+ * - needs_rescreen: all initials done, but some failed and rescreens pending
+ * - completed: all done (all passed, or all rescreens completed)
  */
 export function getComputedStatus(student) {
   // Not started if no screening record
@@ -413,12 +441,12 @@ export function getComputedStatus(student) {
     return 'incomplete';
   }
 
-  // All initial screenings done - but check if any failed and need rescreen
+  // All initial screenings done - check if any failed and need rescreen
   const rescreenStatus = getRescreenStatus(student);
   
-  // If there are ANY pending rescreens (failed initial but rescreen not done), stay incomplete
+  // If there are ANY pending rescreens (failed initial but rescreen not done), status is "needs_rescreen"
   if (rescreenStatus.pending.length > 0) {
-    return 'incomplete';
+    return 'needs_rescreen';
   }
 
   // All screenings done AND all rescreens done (or no rescreens needed) = complete
@@ -429,7 +457,7 @@ export function getComputedStatus(student) {
  * Get the status of a student's screening row (with override support)
  */
 export function getRowStatus(student) {
-  const validStatuses = ['not_started', 'completed', 'incomplete', 'absent'];
+  const validStatuses = ['not_started', 'completed', 'incomplete', 'needs_rescreen', 'absent'];
   
   if (student.status_override && validStatuses.includes(student.status_override)) {
     return student.status_override;
@@ -446,6 +474,7 @@ export function getRowColor(status) {
     'not_started': 'bg-white',
     'completed': 'bg-green-50',
     'incomplete': 'bg-amber-50',
+    'needs_rescreen': 'bg-purple-50',
     'absent': 'bg-blue-100',
   };
   return colors[status] || 'bg-white';

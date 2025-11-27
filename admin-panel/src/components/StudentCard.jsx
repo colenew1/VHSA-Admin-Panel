@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getScreeners } from '../api/client';
-import { hasFailedTest, needsRescreen, getFailedTests, getRowStatus, formatTestResult, isTestFail, formatDOB, getRescreenStatus } from '../utils/statusHelpers';
+import { hasFailedTest, needsRescreen, getFailedTests, getRowStatus, formatTestResult, isTestFail, formatDOB, getRescreenStatus, getStateRequiredTests, getRemainingTests } from '../utils/statusHelpers';
 import { TEST_RESULT_OPTIONS, VISION_ACUITY_OPTIONS, GRADE_OPTIONS } from '../constants/screeningOptions';
 
 /**
@@ -24,89 +24,7 @@ function formatVision(value) {
   return v;
 }
 
-/**
- * Check if student turned 4 by September 1st based on their DOB
- * Returns true if birthday is on or before September 1st (month/day only)
- */
-function turned4BySept1(dob) {
-  if (!dob) return true; // Default to required if no DOB
-  
-  const birthDate = new Date(dob);
-  const month = birthDate.getMonth() + 1; // getMonth() is 0-indexed
-  const day = birthDate.getDate();
-  
-  // If born Jan-Aug, they turned 4 before Sept 1 → Required
-  if (month <= 8) return true;
-  
-  // If born Sept 1, they turned 4 on Sept 1 → Required
-  if (month === 9 && day === 1) return true;
-  
-  // If born Sept 2-30 or Oct-Dec, they turned 4 after Sept 1 → Not required
-  return false;
-}
-
-/**
- * Calculate which tests are state-required based on grade/status/gender
- */
-function getStateRequiredTests(student) {
-  const { grade, status, gender, dob } = student;
-  const isNew = status === 'New';
-  
-  const required = {
-    vision: false,
-    hearing: false,
-    acanthosis: false,
-    scoliosis: false,
-  };
-  
-  if (grade === 'Pre-K (3)') {
-    // No required tests
-  } else if (grade === 'Pre-K (4)') {
-    // Only required if turned 4 by September 1st
-    if (turned4BySept1(dob)) {
-      required.vision = true;
-      required.hearing = true;
-    }
-  } else if (grade === 'Kindergarten') {
-    required.vision = true;
-    required.hearing = true;
-  } else if (grade === '1st') {
-    required.vision = true;
-    required.hearing = true;
-    required.acanthosis = true;
-  } else if (grade === '2nd') {
-    if (isNew) { required.vision = true; required.hearing = true; required.acanthosis = true; }
-  } else if (grade === '3rd') {
-    required.vision = true;
-    required.hearing = true;
-    required.acanthosis = true;
-  } else if (grade === '4th') {
-    if (isNew) { required.vision = true; required.hearing = true; required.acanthosis = true; }
-  } else if (grade === '5th') {
-    required.vision = true;
-    required.hearing = true;
-    required.acanthosis = true;
-    if (gender === 'Female') required.scoliosis = true;
-  } else if (grade === '6th') {
-    if (isNew) { required.vision = true; required.hearing = true; required.acanthosis = true; }
-  } else if (grade === '7th') {
-    required.vision = true;
-    required.hearing = true;
-    required.acanthosis = true;
-    if (gender === 'Female') required.scoliosis = true;
-  } else if (grade === '8th') {
-    if (isNew) {
-      required.vision = true;
-      required.hearing = true;
-      required.acanthosis = true;
-      if (gender === 'Male') required.scoliosis = true;
-    }
-  } else if (['9th', '10th', '11th', '12th'].includes(grade)) {
-    if (isNew) { required.vision = true; required.hearing = true; required.acanthosis = true; }
-  }
-  
-  return required;
-}
+// Note: getStateRequiredTests and getRemainingTests are imported from statusHelpers.js
 
 /**
  * Status badge component
@@ -119,9 +37,9 @@ function StatusBadge({ status, hasFailed, rescreenStatus, allInitialsDone }) {
   const allRescreensPassed = allRescreensDone && rescreenStatus?.rescreenFailed?.length === 0;
   
   // Badge logic:
-  // 1. Primary: Incomplete / Complete / Not Started / Absent
+  // 1. Primary: Incomplete / Needs Rescreen / Complete / Not Started / Absent
   // 2. Secondary: "FAILED" if any test failed (and not all rescreens passed)
-  // 3. Tertiary: "Needs Rescreen" if rescreens pending, OR "Rescreened" if done
+  // 3. Tertiary: "Rescreened" if all rescreens done
   
   let primaryBadge = null;
   
@@ -131,6 +49,8 @@ function StatusBadge({ status, hasFailed, rescreenStatus, allInitialsDone }) {
     primaryBadge = { bg: 'bg-blue-100', text: 'text-blue-700', border: 'border-blue-300', label: 'Absent' };
   } else if (status === 'incomplete') {
     primaryBadge = { bg: 'bg-amber-100', text: 'text-amber-700', border: 'border-amber-300', label: 'Incomplete' };
+  } else if (status === 'needs_rescreen') {
+    primaryBadge = { bg: 'bg-purple-100', text: 'text-purple-700', border: 'border-purple-300', label: 'Needs Rescreen' };
   } else if (status === 'completed') {
     primaryBadge = { bg: 'bg-green-100', text: 'text-green-700', border: 'border-green-300', label: 'Complete' };
   }
@@ -141,9 +61,6 @@ function StatusBadge({ status, hasFailed, rescreenStatus, allInitialsDone }) {
   
   // Show FAILED if any test failed and rescreens haven't all passed
   const showFailed = hasFailed && !allRescreensPassed;
-  
-  // Show Needs Rescreen if there are pending rescreens
-  const showNeedsRescreen = hasPendingRescreens;
   
   // Show Rescreened if all rescreens are done
   const showRescreened = allRescreensDone;
@@ -157,12 +74,6 @@ function StatusBadge({ status, hasFailed, rescreenStatus, allInitialsDone }) {
       {showFailed && (
         <span className="px-2.5 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700 border border-red-300">
           FAILED
-        </span>
-      )}
-      
-      {showNeedsRescreen && (
-        <span className="px-2.5 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-700 border border-purple-300">
-          Needs Rescreen
         </span>
       )}
       
@@ -327,37 +238,7 @@ function EditField({ label, value, onChange, type = 'text', options = [], disabl
   );
 }
 
-/**
- * Calculate remaining tests for a student
- * Uses the *_required fields (which default to state requirements but can be overridden)
- */
-function getRemainingTests(student) {
-  const remaining = [];
-  
-  // Get state requirements as defaults
-  const stateRequired = getStateRequiredTests(student);
-  
-  // Use the *_required field if it exists (explicitly set), otherwise fall back to state requirement
-  // If *_required is explicitly false, the screening is not needed even if state required
-  const needsVision = student.vision_required ?? stateRequired.vision;
-  const needsHearing = student.hearing_required ?? stateRequired.hearing;
-  const needsAN = student.acanthosis_required ?? stateRequired.acanthosis;
-  const needsScoliosis = student.scoliosis_required ?? stateRequired.scoliosis;
-  
-  // Check if each test is done
-  const visionDone = student.vision_complete || (student.vision_initial_right && student.vision_initial_left);
-  const hearingDone = student.hearing_complete || (student.hearing_initial_right_1000 && student.hearing_initial_left_1000);
-  const anDone = student.acanthosis_complete || student.acanthosis_initial;
-  const scoliosisDone = student.scoliosis_complete || student.scoliosis_initial;
-  
-  // Only show in "Needs" if required AND not done
-  if (needsVision && !visionDone) remaining.push('V');
-  if (needsHearing && !hearingDone) remaining.push('H');
-  if (needsAN && !anDone) remaining.push('A');
-  if (needsScoliosis && !scoliosisDone) remaining.push('S');
-  
-  return remaining;
-}
+// Note: getRemainingTests is imported from statusHelpers.js
 
 /**
  * Compact student card for grid view
@@ -564,47 +445,6 @@ export function StudentCardExpanded({
           </div>
         </div>
         
-        {/* Screener Info Section */}
-        <div className="bg-purple-50 rounded-lg p-4 mb-6 border border-purple-200">
-          <h3 className="text-sm font-semibold text-purple-800 mb-3 flex items-center gap-2">
-            <span>👤</span> Screener Information
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Initial Screener</label>
-              {isEditing ? (
-                <select
-                  value={student.initial_screener || ''}
-                  onChange={(e) => onChange('initial_screener', e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                >
-                  {screenerOptions.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              ) : (
-                <p className="text-sm text-gray-800 py-2">{student.initial_screener || '—'}</p>
-              )}
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-600 block mb-1">Rescreen Screener</label>
-              {isEditing ? (
-                <select
-                  value={student.rescreen_screener || ''}
-                  onChange={(e) => onChange('rescreen_screener', e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
-                >
-                  {screenerOptions.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              ) : (
-                <p className="text-sm text-gray-800 py-2">{student.rescreen_screener || '—'}</p>
-              )}
-            </div>
-          </div>
-        </div>
-        
         {/* Test Results - 2 column grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           
@@ -638,6 +478,7 @@ export function StudentCardExpanded({
                     <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-600"></th>
                     <th className="px-2 py-1.5 text-center text-xs font-medium text-gray-600">Right Eye</th>
                     <th className="px-2 py-1.5 text-center text-xs font-medium text-gray-600">Left Eye</th>
+                    <th className="px-2 py-1.5 text-center text-xs font-medium text-gray-600">Screener</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -649,6 +490,15 @@ export function StudentCardExpanded({
                     <td className="px-2 py-1">
                       <SelectField value={student.vision_initial_left} onChange={(v) => onChange('vision_initial_left', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.vision_initial_left)} formatValue={formatVision} />
                     </td>
+                    <td className="px-2 py-1">
+                      {isEditing ? (
+                        <select value={student.vision_initial_screener || ''} onChange={(e) => onChange('vision_initial_screener', e.target.value)} className="w-full px-1 py-1 text-xs border border-gray-300 rounded">
+                          {screenerOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-gray-600">{student.vision_initial_screener || '—'}</span>
+                      )}
+                    </td>
                   </tr>
                   <tr className="border-t border-gray-200 bg-gray-50/50">
                     <td className="px-2 py-2 text-xs font-medium text-gray-600">Rescreen</td>
@@ -657,6 +507,15 @@ export function StudentCardExpanded({
                     </td>
                     <td className="px-2 py-1">
                       <SelectField value={student.vision_rescreen_left} onChange={(v) => onChange('vision_rescreen_left', v)} options={VISION_ACUITY_OPTIONS} disabled={!isEditing} formatValue={formatVision} />
+                    </td>
+                    <td className="px-2 py-1">
+                      {isEditing ? (
+                        <select value={student.vision_rescreen_screener || ''} onChange={(e) => onChange('vision_rescreen_screener', e.target.value)} className="w-full px-1 py-1 text-xs border border-gray-300 rounded">
+                          {screenerOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-gray-600">{student.vision_rescreen_screener || '—'}</span>
+                      )}
                     </td>
                   </tr>
                 </tbody>
@@ -710,6 +569,18 @@ export function StudentCardExpanded({
                     <td className="px-1 py-1"><SelectField value={student.hearing_initial_left_2000} onChange={(v) => onChange('hearing_initial_left_2000', v)} options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.hearing_initial_left_2000)} /></td>
                     <td className="px-1 py-1"><SelectField value={student.hearing_initial_left_4000} onChange={(v) => onChange('hearing_initial_left_4000', v)} options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.hearing_initial_left_4000)} /></td>
                   </tr>
+                  <tr className="border-t border-gray-200">
+                    <td className="px-2 py-1 text-xs font-medium text-purple-600">Screener</td>
+                    <td className="px-1 py-1" colSpan={3}>
+                      {isEditing ? (
+                        <select value={student.hearing_initial_screener || ''} onChange={(e) => onChange('hearing_initial_screener', e.target.value)} className="w-full px-1 py-1 text-xs border border-gray-300 rounded">
+                          {screenerOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-gray-600">{student.hearing_initial_screener || '—'}</span>
+                      )}
+                    </td>
+                  </tr>
                   <tr className="border-t border-gray-200 bg-gray-50/50">
                     <td className="px-2 py-2 text-xs font-medium text-gray-500" colSpan={4}>Rescreen</td>
                   </tr>
@@ -724,6 +595,18 @@ export function StudentCardExpanded({
                     <td className="px-1 py-1"><SelectField value={student.hearing_rescreen_left_1000} onChange={(v) => onChange('hearing_rescreen_left_1000', v)} options={TEST_RESULT_OPTIONS} disabled={!isEditing} /></td>
                     <td className="px-1 py-1"><SelectField value={student.hearing_rescreen_left_2000} onChange={(v) => onChange('hearing_rescreen_left_2000', v)} options={TEST_RESULT_OPTIONS} disabled={!isEditing} /></td>
                     <td className="px-1 py-1"><SelectField value={student.hearing_rescreen_left_4000} onChange={(v) => onChange('hearing_rescreen_left_4000', v)} options={TEST_RESULT_OPTIONS} disabled={!isEditing} /></td>
+                  </tr>
+                  <tr className="bg-gray-50/50 border-t border-gray-200">
+                    <td className="px-2 py-1 text-xs font-medium text-purple-600">Screener</td>
+                    <td className="px-1 py-1" colSpan={3}>
+                      {isEditing ? (
+                        <select value={student.hearing_rescreen_screener || ''} onChange={(e) => onChange('hearing_rescreen_screener', e.target.value)} className="w-full px-1 py-1 text-xs border border-gray-300 rounded">
+                          {screenerOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-gray-600">{student.hearing_rescreen_screener || '—'}</span>
+                      )}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -750,10 +633,26 @@ export function StudentCardExpanded({
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Initial</label>
                 <SelectField value={student.acanthosis_initial} onChange={(v) => onChange('acanthosis_initial', v)} options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.acanthosis_initial)} />
+                <label className="text-xs font-medium text-purple-600 block mt-2 mb-1">Screener</label>
+                {isEditing ? (
+                  <select value={student.acanthosis_initial_screener || ''} onChange={(e) => onChange('acanthosis_initial_screener', e.target.value)} className="w-full px-2 py-1 text-xs border border-gray-300 rounded">
+                    {screenerOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                ) : (
+                  <span className="text-xs text-gray-600">{student.acanthosis_initial_screener || '—'}</span>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Rescreen</label>
                 <SelectField value={student.acanthosis_rescreen} onChange={(v) => onChange('acanthosis_rescreen', v)} options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.acanthosis_rescreen)} />
+                <label className="text-xs font-medium text-purple-600 block mt-2 mb-1">Screener</label>
+                {isEditing ? (
+                  <select value={student.acanthosis_rescreen_screener || ''} onChange={(e) => onChange('acanthosis_rescreen_screener', e.target.value)} className="w-full px-2 py-1 text-xs border border-gray-300 rounded">
+                    {screenerOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                ) : (
+                  <span className="text-xs text-gray-600">{student.acanthosis_rescreen_screener || '—'}</span>
+                )}
               </div>
             </div>
           </div>
@@ -778,10 +677,26 @@ export function StudentCardExpanded({
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Initial</label>
                 <SelectField value={student.scoliosis_initial} onChange={(v) => onChange('scoliosis_initial', v)} options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.scoliosis_initial)} />
+                <label className="text-xs font-medium text-purple-600 block mt-2 mb-1">Screener</label>
+                {isEditing ? (
+                  <select value={student.scoliosis_initial_screener || ''} onChange={(e) => onChange('scoliosis_initial_screener', e.target.value)} className="w-full px-2 py-1 text-xs border border-gray-300 rounded">
+                    {screenerOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                ) : (
+                  <span className="text-xs text-gray-600">{student.scoliosis_initial_screener || '—'}</span>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-500 block mb-1">Rescreen</label>
                 <SelectField value={student.scoliosis_rescreen} onChange={(v) => onChange('scoliosis_rescreen', v)} options={TEST_RESULT_OPTIONS} disabled={!isEditing} isFailed={isTestFail(student.scoliosis_rescreen)} />
+                <label className="text-xs font-medium text-purple-600 block mt-2 mb-1">Screener</label>
+                {isEditing ? (
+                  <select value={student.scoliosis_rescreen_screener || ''} onChange={(e) => onChange('scoliosis_rescreen_screener', e.target.value)} className="w-full px-2 py-1 text-xs border border-gray-300 rounded">
+                    {screenerOptions.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                  </select>
+                ) : (
+                  <span className="text-xs text-gray-600">{student.scoliosis_rescreen_screener || '—'}</span>
+                )}
               </div>
             </div>
           </div>
