@@ -637,7 +637,7 @@ export function StudentCardExpanded({
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-100">
-                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-600"></th>
+                    <th className="px-2 py-1.5 text-left text-xs font-medium text-gray-600">25dB</th>
                     <th className="px-2 py-1.5 text-center text-xs font-medium text-gray-600">1000Hz</th>
                     <th className="px-2 py-1.5 text-center text-xs font-medium text-gray-600">2000Hz</th>
                     <th className="px-2 py-1.5 text-center text-xs font-medium text-gray-600">4000Hz</th>
