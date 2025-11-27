@@ -59,8 +59,8 @@ const HEADER_ALIASES = {
   'n/r': 'status',
 };
 
-// Required fields for validation
-const REQUIRED_FIELDS = ['first_name', 'last_name', 'grade', 'gender', 'dob', 'school', 'status'];
+// Required fields for validation (teacher and status are optional - status defaults to "New")
+const REQUIRED_FIELDS = ['first_name', 'last_name', 'grade', 'gender', 'dob', 'school'];
 
 // Normalize a header to its standard field name
 const normalizeHeader = (header) => {
