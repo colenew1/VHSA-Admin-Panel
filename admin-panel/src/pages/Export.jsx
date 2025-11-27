@@ -111,7 +111,7 @@ export default function Export() {
   
   const allStudents = screeningData?.data || [];
   
-  // Filter students for cards - by status and grade
+  // Filter students for cards - by status and grade, sorted by grade then last name
   const filteredStudents = useMemo(() => {
     let filtered = allStudents;
     
@@ -122,6 +122,20 @@ export default function Export() {
     
     // Filter by grade
     filtered = filtered.filter(s => cardsGrades.includes(s.grade));
+    
+    // Sort by grade level first, then by last name
+    filtered = [...filtered].sort((a, b) => {
+      const gradeA = ALL_GRADES.indexOf(a.grade);
+      const gradeB = ALL_GRADES.indexOf(b.grade);
+      
+      // First compare by grade
+      if (gradeA !== gradeB) {
+        return gradeA - gradeB;
+      }
+      
+      // Then by last name (alphabetically)
+      return (a.last_name || '').localeCompare(b.last_name || '');
+    });
     
     return filtered;
   }, [allStudents, statusFilter, cardsGrades]);
@@ -302,7 +316,7 @@ export default function Export() {
             margin-bottom: 6px;
           }
           .student-id { font-family: monospace; font-weight: bold; font-size: 14px; }
-          .grade { font-size: 12px; color: #666; }
+          .grade { font-size: 16px; font-weight: bold; color: #333; }
           .student-name { font-size: 16px; font-weight: bold; margin-bottom: 4px; }
           .teacher { font-size: 11px; color: #666; margin-bottom: 8px; }
           .tests-section { flex: 1; }
@@ -736,7 +750,7 @@ export default function Export() {
                         <div key={idx} className="border-2 border-gray-300 rounded-lg p-3 bg-white">
                           <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-2">
                             <span className="font-mono font-bold text-sm">{student.unique_id || 'N/A'}</span>
-                            <span className="text-xs text-gray-500">{student.grade}</span>
+                            <span className="text-base font-bold text-gray-800">{student.grade}</span>
                           </div>
                           <p className="font-semibold">{student.last_name}, {student.first_name}</p>
                           <p className="text-xs text-gray-500 mb-2">Teacher: {student.teacher || '—'}</p>
