@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getScreeningData, updateScreening, getSchools } from '../api/client';
-import { getRowStatus, hasFailedTest, needsRescreen } from '../utils/statusHelpers';
+import { getRowStatus, hasFailedTest, needsRescreen, isCurrentlyFailed } from '../utils/statusHelpers';
 import { StudentCardCompact, StudentCardExpanded } from '../components/StudentCard';
 import { useToast } from '../components/Toast';
 
@@ -166,7 +166,7 @@ export default function DashboardNew() {
       else if (status === 'not_started') s.notStarted++;
       else if (status === 'absent') s.absent++;
       
-      if (hasFailedTest(student)) s.failed++;
+      if (isCurrentlyFailed(student)) s.failed++;
       if (needsRescreen(student)) s.rescreen++;
     });
     
@@ -192,9 +192,9 @@ export default function DashboardNew() {
       filtered = filtered.filter(s => getRowStatus(s) === statusFilter);
     }
     
-    // Filter by failed
+    // Filter by failed (only show if still failed - not if rescreen passed)
     if (showFailed) {
-      filtered = filtered.filter(s => hasFailedTest(s));
+      filtered = filtered.filter(s => isCurrentlyFailed(s));
     }
     
     // Filter by needs rescreen

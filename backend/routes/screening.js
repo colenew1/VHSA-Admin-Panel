@@ -251,14 +251,20 @@ router.get('/data', async (req, res, next) => {
         school: student.school || '',
         teacher: student.teacher || '',
         status: student.status || '',
-        notes: student.notes || '', // Student notes
+        // Notes - from screening_results
+        initial_notes: screeningRow?.initial_notes || '',
+        rescreen_notes: screeningRow?.rescreen_notes || '',
+        // Screener names
+        initial_screener: screeningRow?.initial_screener || '',
+        rescreen_screener: screeningRow?.rescreen_screener || '',
         // Screening data - null if not screened yet
         initial_screening_date: screeningRow?.initial_screening_date || null,
         was_absent: screeningRow?.was_absent ?? false,
         glasses_or_contacts: screeningRow?.vision_initial_glasses || screeningRow?.vision_rescreen_glasses || null,
         status_override: screeningRow?.status_override || null, // Manual status override
         // Vision - using correct field names (null if not screened)
-        vision_required: screeningRow?.vision_required ?? false,
+        // Use null instead of false so frontend can apply state requirements as defaults
+        vision_required: screeningRow?.vision_required ?? null,
         vision_complete: screeningRow?.vision_complete ?? false, // Use database's generated column
         vision_initial_right: screeningRow?.vision_initial_right_eye ?? null,
         vision_initial_left: screeningRow?.vision_initial_left_eye ?? null,
@@ -266,7 +272,7 @@ router.get('/data', async (req, res, next) => {
         vision_rescreen_left: screeningRow?.vision_rescreen_left_eye ?? null,
         vision_overall: screeningRow?.vision_overall ?? null, // Screener's explicit overall pass/fail
         // Hearing - all 12 frequency columns (1k, 2k, 4k for right/left, initial/rescreen)
-        hearing_required: screeningRow?.hearing_required ?? false,
+        hearing_required: screeningRow?.hearing_required ?? null,
         hearing_complete: screeningRow?.hearing_complete ?? false, // Use database's generated column
         // Initial Right
         hearing_initial_right_1000: screeningRow?.hearing_initial_right_1000 ?? null,
@@ -286,12 +292,12 @@ router.get('/data', async (req, res, next) => {
         hearing_rescreen_left_4000: screeningRow?.hearing_rescreen_left_4000 ?? null,
         hearing_overall: screeningRow?.hearing_overall ?? null, // Screener's explicit overall pass/fail
         // Acanthosis - using correct field names
-        acanthosis_required: screeningRow?.acanthosis_required ?? false,
+        acanthosis_required: screeningRow?.acanthosis_required ?? null,
         acanthosis_complete: screeningRow?.acanthosis_complete ?? false, // Use database's generated column
         acanthosis_initial: screeningRow?.acanthosis_initial_result ?? null,
         acanthosis_rescreen: screeningRow?.acanthosis_rescreen_result ?? null,
         // Scoliosis - using correct field names
-        scoliosis_required: screeningRow?.scoliosis_required ?? false,
+        scoliosis_required: screeningRow?.scoliosis_required ?? null,
         scoliosis_complete: screeningRow?.scoliosis_complete ?? false, // Use database's generated column
         scoliosis_initial: screeningRow?.scoliosis_initial_result ?? null,
         scoliosis_rescreen: screeningRow?.scoliosis_rescreen_result ?? null,
@@ -413,7 +419,10 @@ router.put('/:unique_id', async (req, res, next) => {
       'was_absent': 'was_absent',
       'glasses_or_contacts': null, // This is derived from vision_initial_glasses or vision_rescreen_glasses
       'status_override': 'status_override', // Manual status override
-      'notes': 'notes', // Screening notes
+      'initial_notes': 'initial_notes', // Initial screening notes
+      'rescreen_notes': 'rescreen_notes', // Rescreen notes
+      'initial_screener': 'initial_screener', // Who did initial screening
+      'rescreen_screener': 'rescreen_screener', // Who did rescreen
       // Vision
       'vision_required': 'vision_required',
       'vision_complete': 'vision_complete',

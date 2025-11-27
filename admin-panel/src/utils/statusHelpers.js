@@ -3,6 +3,140 @@
  */
 
 /**
+ * Check if student turned 4 by September 1st based on their DOB
+ * Returns true if birthday is on or before September 1st (month/day only)
+ */
+function turned4BySept1(dob) {
+  if (!dob) return true; // Default to required if no DOB
+  
+  const birthDate = new Date(dob);
+  const month = birthDate.getMonth() + 1; // getMonth() is 0-indexed
+  const day = birthDate.getDate();
+  
+  // If born Jan-Aug, they turned 4 before Sept 1 → Required
+  if (month <= 8) return true;
+  
+  // If born Sept 1, they turned 4 on Sept 1 → Required
+  if (month === 9 && day === 1) return true;
+  
+  // If born Sept 2-30 or Oct-Dec, they turned 4 after Sept 1 → Not required
+  return false;
+}
+
+/**
+ * Calculate which tests are state-required based on grade/status/gender/dob
+ */
+export function getStateRequiredTests(student) {
+  const { grade, status, gender, dob } = student;
+  const isNew = status === 'New';
+  
+  const required = {
+    vision: false,
+    hearing: false,
+    acanthosis: false,
+    scoliosis: false,
+  };
+  
+  if (grade === 'Pre-K (3)') {
+    // No required tests
+  } else if (grade === 'Pre-K (4)') {
+    // Only required if turned 4 by September 1st
+    if (turned4BySept1(dob)) {
+      required.vision = true;
+      required.hearing = true;
+    }
+  } else if (grade === 'Kindergarten') {
+    required.vision = true;
+    required.hearing = true;
+  } else if (grade === '1st') {
+    required.vision = true;
+    required.hearing = true;
+    required.acanthosis = true;
+  } else if (grade === '2nd') {
+    if (isNew) { required.vision = true; required.hearing = true; required.acanthosis = true; }
+  } else if (grade === '3rd') {
+    required.vision = true;
+    required.hearing = true;
+    required.acanthosis = true;
+  } else if (grade === '4th') {
+    if (isNew) { required.vision = true; required.hearing = true; required.acanthosis = true; }
+  } else if (grade === '5th') {
+    required.vision = true;
+    required.hearing = true;
+    required.acanthosis = true;
+    if (gender === 'Female') required.scoliosis = true;
+  } else if (grade === '6th') {
+    if (isNew) { required.vision = true; required.hearing = true; required.acanthosis = true; }
+  } else if (grade === '7th') {
+    required.vision = true;
+    required.hearing = true;
+    required.acanthosis = true;
+    if (gender === 'Female') required.scoliosis = true;
+  } else if (grade === '8th') {
+    if (isNew) {
+      required.vision = true;
+      required.hearing = true;
+      required.acanthosis = true;
+      if (gender === 'Male') required.scoliosis = true;
+    }
+  } else if (['9th', '10th', '11th', '12th'].includes(grade)) {
+    if (isNew) { required.vision = true; required.hearing = true; required.acanthosis = true; }
+  }
+  
+  return required;
+}
+
+/**
+ * Get effective required status - uses explicit value if set, otherwise falls back to state requirement
+ */
+function getEffectiveRequired(student) {
+  const stateReq = getStateRequiredTests(student);
+  
+  return {
+    vision: student.vision_required !== null && student.vision_required !== undefined 
+      ? student.vision_required 
+      : stateReq.vision,
+    hearing: student.hearing_required !== null && student.hearing_required !== undefined 
+      ? student.hearing_required 
+      : stateReq.hearing,
+    acanthosis: student.acanthosis_required !== null && student.acanthosis_required !== undefined 
+      ? student.acanthosis_required 
+      : stateReq.acanthosis,
+    scoliosis: student.scoliosis_required !== null && student.scoliosis_required !== undefined 
+      ? student.scoliosis_required 
+      : stateReq.scoliosis,
+  };
+}
+
+/**
+ * Get remaining tests that still need to be done
+ */
+export function getRemainingTests(student) {
+  const required = getEffectiveRequired(student);
+  const remaining = [];
+  
+  const hasValue = (v) => v !== null && v !== undefined && v !== '';
+  
+  // Vision - done if any initial value entered
+  const visionDone = hasValue(student.vision_initial_right) || hasValue(student.vision_initial_left);
+  if (required.vision && !visionDone) remaining.push('V');
+  
+  // Hearing - done if any initial value entered
+  const hearingDone = hasValue(student.hearing_initial_right_1000) || hasValue(student.hearing_initial_left_1000);
+  if (required.hearing && !hearingDone) remaining.push('H');
+  
+  // Acanthosis
+  const anDone = hasValue(student.acanthosis_initial);
+  if (required.acanthosis && !anDone) remaining.push('A');
+  
+  // Scoliosis
+  const scoliosisDone = hasValue(student.scoliosis_initial);
+  if (required.scoliosis && !scoliosisDone) remaining.push('S');
+  
+  return remaining;
+}
+
+/**
  * Check if any test has failed (returns "F" or "FAIL")
  */
 export function hasFailedTest(student) {
@@ -189,6 +323,28 @@ export function needsRescreen(student) {
 }
 
 /**
+ * Check if student is currently in "failed" state
+ * Returns true only if: failed initial AND (rescreen not done OR rescreen also failed)
+ * Returns false if: rescreen was done and passed (they recovered)
+ */
+export function isCurrentlyFailed(student) {
+  const rescreenStatus = getRescreenStatus(student);
+  
+  // If nothing ever failed, not failed
+  if (rescreenStatus.needed.length === 0) {
+    return false;
+  }
+  
+  // If all rescreens are done and passed, not currently failed (they recovered)
+  if (rescreenStatus.pending.length === 0 && rescreenStatus.rescreenFailed.length === 0) {
+    return false;
+  }
+  
+  // Still has pending rescreens OR rescreen failed = currently failed
+  return true;
+}
+
+/**
  * Check if any screening data has been entered
  */
 function hasScreeningData(student) {
@@ -233,11 +389,22 @@ export function getComputedStatus(student) {
     return 'absent';
   }
 
-  // Check if all required tests are complete
-  const visionComplete = !student.vision_required || (student.vision_complete === true);
-  const hearingComplete = !student.hearing_required || (student.hearing_complete === true);
-  const acanthosisComplete = !student.acanthosis_required || (student.acanthosis_complete === true);
-  const scoliosisComplete = !student.scoliosis_required || (student.scoliosis_complete === true);
+  // Get effective required status (uses state requirements as fallback)
+  const required = getEffectiveRequired(student);
+  
+  const hasValue = (v) => v !== null && v !== undefined && v !== '';
+  
+  // Check if each required test is done
+  const visionDone = hasValue(student.vision_initial_right) || hasValue(student.vision_initial_left);
+  const hearingDone = hasValue(student.hearing_initial_right_1000) || hasValue(student.hearing_initial_left_1000);
+  const anDone = hasValue(student.acanthosis_initial);
+  const scoliosisDone = hasValue(student.scoliosis_initial);
+  
+  // A test is complete if: not required OR done
+  const visionComplete = !required.vision || visionDone;
+  const hearingComplete = !required.hearing || hearingDone;
+  const acanthosisComplete = !required.acanthosis || anDone;
+  const scoliosisComplete = !required.scoliosis || scoliosisDone;
 
   const allInitialComplete = visionComplete && hearingComplete && acanthosisComplete && scoliosisComplete;
 

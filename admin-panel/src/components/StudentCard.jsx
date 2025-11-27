@@ -1,4 +1,6 @@
 import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { getScreeners } from '../api/client';
 import { hasFailedTest, needsRescreen, getFailedTests, getRowStatus, formatTestResult, isTestFail, formatDOB, getRescreenStatus } from '../utils/statusHelpers';
 import { TEST_RESULT_OPTIONS, VISION_ACUITY_OPTIONS, GRADE_OPTIONS } from '../constants/screeningOptions';
 
@@ -496,6 +498,17 @@ export function StudentCardExpanded({
   onClose,
   isSaving 
 }) {
+  // Fetch screeners for dropdown
+  const { data: screenersData } = useQuery({
+    queryKey: ['screeners'],
+    queryFn: getScreeners,
+  });
+  const screeners = screenersData?.screeners || [];
+  const screenerOptions = [
+    { value: '', label: '— Select Screener —' },
+    ...screeners.map(s => ({ value: s.name, label: s.name }))
+  ];
+  
   const status = getRowStatus(student);
   const hasFailed = hasFailedTest(student);
   const stateRequired = getStateRequiredTests(student);
@@ -548,6 +561,47 @@ export function StudentCardExpanded({
           <EditField label="Teacher" value={student.teacher} onChange={(v) => onChange('teacher', v)} disabled={!isEditing} />
           <div className="flex items-end">
             <EditField label="Glasses/Contacts" value={student.glasses_or_contacts === 'Yes'} onChange={(v) => onChange('glasses_or_contacts', v ? 'Yes' : 'No')} type="checkbox" disabled={!isEditing} />
+          </div>
+        </div>
+        
+        {/* Screener Info Section */}
+        <div className="bg-purple-50 rounded-lg p-4 mb-6 border border-purple-200">
+          <h3 className="text-sm font-semibold text-purple-800 mb-3 flex items-center gap-2">
+            <span>👤</span> Screener Information
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">Initial Screener</label>
+              {isEditing ? (
+                <select
+                  value={student.initial_screener || ''}
+                  onChange={(e) => onChange('initial_screener', e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                >
+                  {screenerOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-800 py-2">{student.initial_screener || '—'}</p>
+              )}
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-600 block mb-1">Rescreen Screener</label>
+              {isEditing ? (
+                <select
+                  value={student.rescreen_screener || ''}
+                  onChange={(e) => onChange('rescreen_screener', e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                >
+                  {screenerOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-sm text-gray-800 py-2">{student.rescreen_screener || '—'}</p>
+              )}
+            </div>
           </div>
         </div>
         
@@ -733,17 +787,30 @@ export function StudentCardExpanded({
           </div>
         </div>
         
-        {/* Notes */}
-        <div className="mb-6">
-          <label className="text-sm font-medium text-gray-700 block mb-2">Notes</label>
-          <textarea
-            value={student.notes || ''}
-            onChange={(e) => onChange('notes', e.target.value)}
-            disabled={!isEditing}
-            rows={3}
-            className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-            placeholder={isEditing ? "Add notes..." : "No notes"}
-          />
+        {/* Notes - Initial and Rescreen */}
+        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-2">📝 Initial Screening Notes</label>
+            <textarea
+              value={student.initial_notes || ''}
+              onChange={(e) => onChange('initial_notes', e.target.value)}
+              disabled={!isEditing}
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+              placeholder={isEditing ? "Add initial screening notes..." : "No notes"}
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-2">🔄 Rescreen Notes</label>
+            <textarea
+              value={student.rescreen_notes || ''}
+              onChange={(e) => onChange('rescreen_notes', e.target.value)}
+              disabled={!isEditing}
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+              placeholder={isEditing ? "Add rescreen notes..." : "No notes"}
+            />
+          </div>
         </div>
         
         {/* Actions */}
