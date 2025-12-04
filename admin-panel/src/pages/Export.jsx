@@ -4,6 +4,38 @@ import { getSchools, getScreeningData } from '../api/client';
 import { getRowStatus, formatDate } from '../utils/statusHelpers';
 import { useToast } from '../components/Toast';
 
+/**
+ * Check if student turned 4 by September 1st based on their DOB
+ * Returns true if birthday (month/day) is on or before September 1st
+ */
+function turned4BySept1(dob) {
+  if (!dob) return true; // Default to required if no DOB (safety)
+  
+  const dobStr = String(dob);
+  let month, day;
+  
+  if (dobStr.includes('-')) {
+    const parts = dobStr.split('-');
+    month = parseInt(parts[1], 10);
+    day = parseInt(parts[2], 10);
+  } else if (dobStr.includes('/')) {
+    const parts = dobStr.split('/');
+    month = parseInt(parts[0], 10);
+    day = parseInt(parts[1], 10);
+  } else {
+    const birthDate = new Date(dob);
+    month = birthDate.getMonth() + 1;
+    day = birthDate.getDate();
+  }
+  
+  // Born Jan-Aug (months 1-8) → turns 4 before Sept 1 → Required
+  if (month >= 1 && month <= 8) return true;
+  // Born Sept 1 (month 9, day 1) → turns 4 ON Sept 1 → Required
+  if (month === 9 && day === 1) return true;
+  // Born Sept 2+ or Oct-Dec → turns 4 AFTER Sept 1 → Not required
+  return false;
+}
+
 // All possible grades in order
 const ALL_GRADES = [
   'Pre-K (3)', 'Pre-K (4)', 'Kindergarten', 
@@ -22,13 +54,20 @@ const GRADE_PRESETS = {
   'k-8': { label: 'K-8', grades: ['Kindergarten', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'] },
 };
 
-// Calculate what tests a student needs based on grade/status/gender
-function getTestsNeeded(student) {
-  const { grade, status, gender } = student;
+// Calculate what tests a student needs based on grade/status/gender/dob
+// includeAllPreK4: if true, disregard Sept 1 birthday cutoff for Pre-K 4
+function getTestsNeeded(student, includeAllPreK4 = false) {
+  const { grade, status, gender, dob } = student;
   const isNew = status === 'New';
   
   if (grade === 'Pre-K (3)') return '';
-  if (grade === 'Pre-K (4)') return 'V H';
+  if (grade === 'Pre-K (4)') {
+    // Only require V H if turned 4 by Sept 1, OR if override is enabled
+    if (includeAllPreK4 || turned4BySept1(dob)) {
+      return 'V H';
+    }
+    return '';
+  }
   if (grade === 'Kindergarten') return 'V H';
   if (grade === '1st') return 'V H A';
   if (grade === '2nd') return isNew ? 'V H A' : '';
@@ -86,6 +125,7 @@ export default function Export() {
   // Cards export state
   const [cardsGrades, setCardsGrades] = useState([...ALL_GRADES]);
   const [cardsGradePreset, setCardsGradePreset] = useState('all');
+  const [includeAllPreK4, setIncludeAllPreK4] = useState(false);
   
   // Fetch schools
   const { data: schoolsData } = useQuery({
@@ -254,7 +294,7 @@ export default function Export() {
     }
     
     const cardsHTML = filteredStudents.map((student) => {
-      const tests = getTestsNeeded(student);
+      const tests = getTestsNeeded(student, includeAllPreK4);
       return `
         <div class="card">
           <div class="card-header">
@@ -345,7 +385,7 @@ export default function Export() {
           for (let i = 0; i < filteredStudents.length; i += 8) {
             const pageStudents = filteredStudents.slice(i, i + 8);
             const pageCardsHTML = pageStudents.map(student => {
-              const tests = getTestsNeeded(student);
+              const tests = getTestsNeeded(student, includeAllPreK4);
               return `
                 <div class="card">
                   <div class="card-header">
@@ -693,6 +733,27 @@ export default function Export() {
                     </label>
                   ))}
                 </div>
+                
+                {/* Pre-K 4 Override Option */}
+                {cardsGrades.includes('Pre-K (4)') && (
+                  <div className="mt-3 pt-3 border-t border-gray-200">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeAllPreK4}
+                        onChange={(e) => setIncludeAllPreK4(e.target.checked)}
+                        className="w-4 h-4 text-orange-600 border-gray-300 rounded focus:ring-orange-500"
+                      />
+                      <span className="text-sm font-medium text-gray-700">
+                        Include all Pre-K 4 students
+                      </span>
+                      <span className="text-xs text-gray-500">(disregard Sept 1 birthday cutoff)</span>
+                    </label>
+                    <p className="mt-1 ml-6 text-xs text-gray-500">
+                      When checked, all Pre-K 4 students will show V H tests needed, regardless of their birthday.
+                    </p>
+                  </div>
+                )}
               </div>
               
               {/* Status Filter */}
@@ -745,7 +806,7 @@ export default function Export() {
                   <h3 className="text-sm font-medium text-gray-700 mb-3">Preview (first 4 cards)</h3>
                   <div className="grid grid-cols-2 gap-3">
                     {filteredStudents.slice(0, 4).map((student, idx) => {
-                      const tests = getTestsNeeded(student);
+                      const tests = getTestsNeeded(student, includeAllPreK4);
                       return (
                         <div key={idx} className="border-2 border-gray-300 rounded-lg p-3 bg-white">
                           <div className="flex justify-between items-center border-b border-gray-200 pb-1 mb-2">

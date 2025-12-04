@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getScreeners } from '../api/client';
-import { hasFailedTest, needsRescreen, getFailedTests, getRowStatus, formatTestResult, isTestFail, formatDOB, getRescreenStatus, getStateRequiredTests, getRemainingTests } from '../utils/statusHelpers';
+import { hasFailedTest, needsRescreen, getFailedTests, getRowStatus, formatTestResult, isTestFail, formatDOB, getRescreenStatus, getStateRequiredTests, getRemainingTests, formatDate } from '../utils/statusHelpers';
 import { TEST_RESULT_OPTIONS, VISION_ACUITY_OPTIONS, GRADE_OPTIONS } from '../constants/screeningOptions';
 
 /**
@@ -304,13 +304,17 @@ export function StudentCardCompact({ student, onClick, isSelected }) {
         {student.last_name}, {student.first_name}
       </h3>
       
-      {/* Row 2: Grade, Teacher, ID */}
+      {/* Row 2: DOB, Grade, Teacher */}
       <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+        {student.dob && (
+          <>
+            <span className="font-medium text-gray-600">DOB: {formatDate(student.dob)}</span>
+            <span>•</span>
+          </>
+        )}
         <span className="font-medium">{student.grade}</span>
         <span>•</span>
         <span className="truncate">{student.teacher || 'No Teacher'}</span>
-        <span>•</span>
-        <span>ID: {student.unique_id || student.student_id || '—'}</span>
         {student.glasses_or_contacts === 'Yes' && (
           <span className="px-1 bg-gray-100 rounded">👓</span>
         )}
